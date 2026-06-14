@@ -218,13 +218,13 @@ def make_speed_variant(source: Path, speed: float) -> Path | None:
     speed is instant after the first render. Returns ``None`` if ffmpeg is
     unavailable or the transcode fails.
     """
-    import shutil
+    from novelflow.ffmpeg_path import find_ffmpeg
     import subprocess
 
     source = Path(source)
     if abs(speed - 1.0) < 0.01:
         return source
-    ffmpeg = shutil.which("ffmpeg")
+    ffmpeg = find_ffmpeg()
     if not ffmpeg or not source.is_file():
         return None
     out = _speed_variant_path(source, speed)

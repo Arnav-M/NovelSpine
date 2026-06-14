@@ -10,6 +10,7 @@ from abc import ABC, abstractmethod
 from collections.abc import Callable
 from pathlib import Path
 
+from novelflow.ffmpeg_path import find_ffmpeg
 from novelflow.tts_config import EDGE_CHUNK_PARALLEL
 from novelflow.tts_text import split_for_tts
 
@@ -43,11 +44,11 @@ def _merge_audio_files(chunks: list[Path], output_path: Path) -> Path:
         shutil.copy2(chunks[0], output_path)
         return output_path
 
-    ffmpeg = shutil.which("ffmpeg")
+    ffmpeg = find_ffmpeg()
     if not ffmpeg:
         raise RuntimeError(
             "ffmpeg is required to merge audio chunks. "
-            "Install ffmpeg and add it to your PATH."
+            "Reinstall Novelflow or install ffmpeg and add it to your PATH."
         )
 
     with tempfile.TemporaryDirectory() as tmp:
