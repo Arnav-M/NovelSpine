@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import os
-import shutil
 import subprocess
 import tempfile
 import threading
@@ -12,6 +11,8 @@ from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
+
+from novelflow.ffmpeg_path import find_ffmpeg, find_ffprobe
 
 AAC_BITRATE = os.environ.get("NOVELFLOW_AAC_BITRATE", "64k")
 
@@ -24,7 +25,7 @@ class ChapterMarker:
 
 
 def _probe_duration_ms(path: Path) -> int:
-    ffprobe = shutil.which("ffprobe")
+    ffprobe = find_ffprobe()
     if not ffprobe:
         return 0
     try:
@@ -145,11 +146,11 @@ def merge_audiobook(
     if not section_files:
         raise ValueError("No audio sections to merge")
 
-    ffmpeg = shutil.which("ffmpeg")
+    ffmpeg = find_ffmpeg()
     if not ffmpeg:
         raise RuntimeError(
             "ffmpeg is required to build audiobook files. "
-            "Install ffmpeg and add it to your PATH."
+            "Install ffmpeg or reinstall Novelflow with bundled ffmpeg."
         )
 
     fmt = audio_format.lower().lstrip(".")

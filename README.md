@@ -1,6 +1,6 @@
-﻿# Novelflow
+﻿## Novelflow 3.0
 
-**PDF → readable markdown → chapter-marked audiobook.**
+**PDF → readable markdown → chapter-marked audiobook** — now with a modern desktop app (Tauri + React).
 
 Novelflow extracts text with [PyMuPDF](https://pymupdf.readthedocs.io/) and post-processes it so fiction PDFs become actually readable: proper paragraphs, foldable chapter headings, scene headers, navigation links, and common glyph fixes.
 
@@ -10,9 +10,7 @@ No manual pipeline. No upload. No page limits.
 
 ## Install (end users)
 
-Download **`Novelflow-Setup.exe`** from [GitHub Releases](https://github.com/Arnav-M/Novelflow/releases) and run the wizard. No Python required.
-
-For audiobooks, install [ffmpeg](https://ffmpeg.org/) and add it to your PATH.
+Download **`Novelflow-Setup.exe`** from [GitHub Releases](https://github.com/Arnav-M/Novelflow/releases) and run the wizard. No Python or ffmpeg required.
 
 ## Install (developers)
 
@@ -69,9 +67,20 @@ Section markers are saved in `.manifest.json` with `start_ms` / `end_ms` for in-
 | **edge** | Online, 6 parallel chunks × 4 parallel sections | ~2–4× faster than before |
 | **kokoro** | Offline; WAV batched, one MP3 encode per section | Fastest with NVIDIA/DirectML GPU |
 
-## GUI
+## Desktop app (recommended)
 
-Run `novelflow-gui` — check **Also create chapter-marked audiobook** on the Convert tab, then open **Audiobook settings** for engine, voice, and section pickers.
+The **Tauri + React + FastAPI** desktop UI lives in this repo. See **[README-desktop.md](README-desktop.md)** for install, dev, and build instructions.
+
+## GUI (legacy, deprecated)
+
+The original **Tkinter** GUI (`novelflow-gui`) is deprecated in favor of the desktop app above. It remains available for compatibility:
+
+```bash
+pip install -e ".[gui]"
+novelflow-gui
+```
+
+Source files under `src/novelflow/gui*.py` are kept but no longer receive new features. Use the desktop app for HTML5 playback and the modern UI.
 
 ## Test sample PDFs
 

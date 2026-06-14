@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "novelflow"
-version = "0.2.0"
+version = "3.0.0"
 description = "Convert PDF novels to readable markdown and chapter-marked audiobooks."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -18,17 +18,30 @@ dependencies = [
 [project.scripts]
 novelflow = "novelflow.cli:main"
 novelflow-gui = "novelflow.gui:main"
+novelflow-api = "novelflow.api.__main__:main"
 
 [project.optional-dependencies]
 audiobook = [
     "edge-tts>=6.1.0",
 ]
+api = [
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.32.0",
+    "pydantic>=2.0",
+    "python-multipart>=0.0.9",
+]
 gui = [
     "pygame>=2.5",
     "tkinterdnd2>=0.4",
 ]
+desktop = [
+    "novelflow[audiobook,api]",
+]
 build = ["pyinstaller>=6.0"]
-dev = ["pytest>=8.0"]
+dev = [
+    "pytest>=8.0",
+    "httpx>=0.27.0",
+]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/novelflow"]
