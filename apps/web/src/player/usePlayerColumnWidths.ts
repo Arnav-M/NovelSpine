@@ -8,6 +8,11 @@ export const MIN_PLAYER_CENTER_WIDTH = 820;
 export const MAX_CHAPTERS_WIDTH = 560;
 export const MAX_READER_WIDTH = 1600;
 export const PLAYER_RESIZE_COL_WIDTH = 12;
+export const PLAYER_SIDEBAR_NOTCH_WIDTH = 16;
+export const PLAYER_SIDEBAR_COLLAPSED_NOTCH_WIDTH = 26;
+export const PLAYER_SIDEBAR_COLLAPSED_GAP = 8;
+export const PLAYER_SIDEBAR_COLLAPSED_WIDTH =
+  PLAYER_SIDEBAR_COLLAPSED_NOTCH_WIDTH + PLAYER_SIDEBAR_COLLAPSED_GAP;
 
 export interface PlayerColumnWidths {
   chapters: number;
@@ -73,9 +78,13 @@ function maxReaderWidthForLayout(
   let reserved = MIN_PLAYER_CENTER_WIDTH;
   if (chaptersSidebarOpen) {
     reserved += chaptersWidth + PLAYER_RESIZE_COL_WIDTH;
+  } else {
+    reserved += PLAYER_SIDEBAR_COLLAPSED_WIDTH;
   }
   if (readerSidebarOpen) {
     reserved += PLAYER_RESIZE_COL_WIDTH;
+  } else {
+    reserved += PLAYER_SIDEBAR_COLLAPSED_WIDTH;
   }
 
   return Math.max(DEFAULT_READER_WIDTH, containerWidth - reserved);

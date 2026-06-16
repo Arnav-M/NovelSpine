@@ -1,4 +1,4 @@
-import { chapterLabel, formatTime } from "./timeUtils";
+import { chapterLabelFor, formatTime } from "./timeUtils";
 import { usePlayer } from "./PlayerContext";
 import SeekBar from "./SeekBar";
 import TransportControls from "./TransportControls";
@@ -10,7 +10,8 @@ interface Props {
 export default function MiniPlayerBar({ onOpenPlayer }: Props) {
   const p = usePlayer();
   const audiobookName = p.subtitle || p.selected?.label || "Audiobook";
-  const chapter = chapterLabel(p.activeChapter, p.chapters.length);
+  const partLabel = chapterLabelFor(p.chapters, p.activeChapter);
+  const chapterName = p.chapterTitle;
 
   if (!p.loaded) return null;
 
@@ -19,7 +20,8 @@ export default function MiniPlayerBar({ onOpenPlayer }: Props) {
       <div className="mini-player mini-player-collapsed" onClick={() => p.setMiniCollapsed(false)}>
         <span className="mini-player-peek">
           {audiobookName}
-          {chapter ? ` · ${chapter}` : ""}
+          {partLabel ? ` · ${partLabel}` : ""}
+          {chapterName ? ` — ${chapterName}` : ""}
         </span>
         <button type="button" className="mini-player-expand" aria-label="Expand mini player">
           ▴
@@ -38,7 +40,8 @@ export default function MiniPlayerBar({ onOpenPlayer }: Props) {
         )}
         <div className="mini-player-text">
           <strong>{audiobookName}</strong>
-          <span>{chapter}</span>
+          {partLabel && <span className="mini-player-part">{partLabel}</span>}
+          {chapterName && <span className="mini-player-chapter-title">{chapterName}</span>}
         </div>
       </button>
 

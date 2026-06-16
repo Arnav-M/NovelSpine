@@ -5,8 +5,21 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from novelflow.book_structure import BookManifest
 from novelflow.cover_art import find_cover_for_audiobook, find_cover_in_markdown
 from novelflow.player import load_chapters, probe_chapter_durations, scan_audiobook_folder
+
+
+def _section_kinds_for_audio(audio_path: Path) -> dict[str, str]:
+    """Map section id → kind from the audiobook manifest sidecar, when present."""
+    manifest_path = audio_path.with_suffix(".manifest.json")
+    if not manifest_path.is_file():
+        return {}
+    try:
+        manifest = BookManifest.load(manifest_path)
+    except (json.JSONDecodeError, OSError, KeyError, ValueError):
+        return {}
+    return {section.id: section.kind.value for section in manifest.sections if section.id}
 
 
 def _guess_markdown(audio_path: Path) -> Path | None:
@@ -68,6 +81,7 @@ def chapters_for_audio(audio_path: str, *, probe_durations: bool = True) -> dict
     chapters = load_chapters(path, probe_durations=probe_durations)
     if probe_durations and chapters:
         probe_chapter_durations(chapters)
+    section_kinds = _section_kinds_for_audio(path)
     playable = None
     if path.is_file() and path.suffix.lower() in {".mp3", ".m4a", ".m4b", ".ogg", ".wav"}:
         playable = str(path)
@@ -83,6 +97,7 @@ def chapters_for_audio(audio_path: str, *, probe_durations: bool = True) -> dict
                 "duration_ms": c.duration_ms,
                 "file": str(c.file) if c.file else None,
                 "start_ms": c.start_ms,
+                "kind": section_kinds.get(c.id) if c.id else None,
             }
             for c in chapters
         ],

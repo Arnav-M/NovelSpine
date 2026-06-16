@@ -47,6 +47,7 @@ export interface Chapter {
   duration_ms: number;
   file: string | null;
   start_ms: number;
+  kind?: string | null;
 }
 
 export interface ChaptersResponse {

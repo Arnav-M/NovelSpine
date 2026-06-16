@@ -83,6 +83,53 @@ function readerLineStateFromWeights(
   return { index: weights.length - 1, lineProgress: 1 };
 }
 
+function resolveScaledLineStarts(
+  weights: number[],
+  lineStartMs: number[] | null | undefined,
+  chapterDurationMs: number,
+  sectionDurationMs: number,
+): number[] {
+  if (lineStartMs && lineStartMs.length === weights.length && lineStartMs.length > 0) {
+    return scaleLineStarts(lineStartMs, sectionDurationMs, chapterDurationMs);
+  }
+  return [];
+}
+
+/** Playback ms for seeking when the user clicks a reader line. */
+export function lineSeekMs(
+  lineIndex: number,
+  weights: number[],
+  lineStartMs: number[] | null | undefined,
+  chapterDurationMs: number,
+  options?: {
+    playbackSpeed?: number;
+    sectionDurationMs?: number;
+  },
+): number {
+  if (lineIndex < 0 || lineIndex >= weights.length || chapterDurationMs <= 0) return 0;
+
+  const speed = options?.playbackSpeed ?? 1;
+  const scaledStarts = resolveScaledLineStarts(
+    weights,
+    lineStartMs,
+    chapterDurationMs,
+    options?.sectionDurationMs ?? 0,
+  );
+
+  if (scaledStarts.length > 0) {
+    const timingMs = scaledStarts[lineIndex] ?? 0;
+    return speed > 0 ? timingMs / speed : timingMs;
+  }
+
+  const totalWeight = weights.reduce((sum, w) => sum + Math.max(w, 1), 0);
+  let cumulative = 0;
+  for (let i = 0; i < lineIndex; i += 1) {
+    cumulative += Math.max(weights[i], 1) / totalWeight;
+  }
+  const timingMs = cumulative * chapterDurationMs;
+  return speed > 0 ? timingMs / speed : timingMs;
+}
+
 export function readerLineState(
   weights: number[],
   lineStartMs: number[] | null | undefined,
@@ -95,14 +142,12 @@ export function readerLineState(
 ): ReaderLineState {
   const speed = options?.playbackSpeed ?? 1;
   const timingMs = speed > 0 ? chapterMs * speed : chapterMs;
-  const scaledStarts =
-    lineStartMs && lineStartMs.length === weights.length && lineStartMs.length > 0
-      ? scaleLineStarts(
-          lineStartMs,
-          options?.sectionDurationMs ?? 0,
-          chapterDurationMs,
-        )
-      : [];
+  const scaledStarts = resolveScaledLineStarts(
+    weights,
+    lineStartMs,
+    chapterDurationMs,
+    options?.sectionDurationMs ?? 0,
+  );
 
   if (scaledStarts.length > 0) {
     return readerLineStateFromTimestamps(scaledStarts, timingMs, chapterDurationMs);
