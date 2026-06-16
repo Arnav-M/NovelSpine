@@ -13,6 +13,7 @@ import BookTimelineSegment from "./BookTimelineSegment";
 import {
   bookMsToPixelX,
   buildTimelineSegments,
+  chapterLabelFor,
   formatTime,
   pixelXToBookMs,
   seekBookMs,
@@ -51,11 +52,17 @@ const BookTimelineHeader = memo(function BookTimelineHeader({
   bookMs: number;
   total: number;
 }) {
+  const remaining = Math.max(0, total - bookMs);
+  const pct = total > 0 ? Math.round((bookMs / total) * 100) : 0;
   return (
     <div className="book-timeline-header">
       <span className="book-timeline-label">Book progress</span>
       <span className="book-timeline-times">
         {formatTime(bookMs)} / {formatTime(total)}
+        <span className="book-timeline-remaining">
+          {" "}
+          · {pct}% · −{formatTime(remaining)} left
+        </span>
       </span>
     </div>
   );
@@ -431,6 +438,14 @@ export default function BookTimeline({ chapters, currentMs, disabled, onSeek }: 
   const peakChapterTitle =
     hoverActive && peakIndex >= 0 ? segments[peakIndex]?.title : null;
 
+  const peakSegment = peakIndex >= 0 ? segments[peakIndex] : null;
+  const peakChapterLabel =
+    peakIndex >= 0 ? chapterLabelFor(chapters, peakIndex) : null;
+  const peakBookPct =
+    peakSegment && total > 0 ? ((peakSegment.start / total) * 100).toFixed(1) : null;
+  const peakRemaining =
+    peakSegment && total > 0 ? formatTime(Math.max(0, total - peakSegment.start)) : null;
+
   const peakBounds = peakIndex >= 0 ? segmentPixelBounds[peakIndex] : null;
   const chapterTooltipStyle =
     chapterTooltipLeftPx != null
@@ -451,7 +466,7 @@ export default function BookTimeline({ chapters, currentMs, disabled, onSeek }: 
         <BookTimelineHeader bookMs={displayMs} total={total} />
         <div className="book-timeline-tracks" onPointerLeave={handleTracksPointerLeave}>
           <div ref={segmentsWrapRef} className="book-timeline-segments-wrap">
-            {peakChapterTitle && (
+            {peakChapterTitle && peakSegment && (
               <div
                 ref={chapterTooltipRef}
                 className={`book-timeline-chapter-tooltip${
@@ -460,7 +475,16 @@ export default function BookTimeline({ chapters, currentMs, disabled, onSeek }: 
                 style={chapterTooltipStyle}
                 role="tooltip"
               >
-                {peakChapterTitle}
+                <span className="book-timeline-chapter-tooltip-label">
+                  {peakChapterLabel}
+                  {peakChapterLabel ? " · " : ""}
+                  {peakChapterTitle}
+                </span>
+                <span className="book-timeline-chapter-tooltip-meta">
+                  {formatTime(peakSegment.dur)}
+                  {peakBookPct != null ? ` · ${peakBookPct}% of book` : ""}
+                  {peakRemaining ? ` · −${peakRemaining} left` : ""}
+                </span>
               </div>
             )}
             <div ref={segmentsRef} className="book-timeline-segments" aria-hidden={disabled}>

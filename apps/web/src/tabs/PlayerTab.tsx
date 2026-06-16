@@ -251,8 +251,10 @@ function PlayerMainRow({
 
     return (
       <div ref={gridRef} className={gridClass} style={columnStyle}>
-        <div className="player-grid-header-row">
-          <div className="player-grid-chapters-header">
+        <div
+          className={`player-grid-col player-grid-col--chapters${chaptersSidebarOpen ? "" : " is-collapsed"}`}
+        >
+          <div className="player-grid-col-header">
             <ChapterPanel
               part="header"
               chapters={chapters}
@@ -263,14 +265,52 @@ function PlayerMainRow({
               onSelect={(i) => void seekChapter(i)}
             />
           </div>
+          {chaptersSidebarOpen && (
+            <div className="player-grid-col-body">
+              <ChapterPanel
+                part="body"
+                chapters={chapters}
+                activeChapter={activeChapter}
+                open
+                onSelect={(i) => void seekChapter(i)}
+              />
+            </div>
+          )}
+        </div>
 
-          <div className="player-grid-center-header">
+        {showChapterResize && (
+          <PanelResizeHandle
+            className="player-grid-resize player-grid-resize--chapters"
+            label="Resize chapters panel"
+            active={resizing === "chapters"}
+            onDragStart={(clientX) => beginResize("chapters", clientX)}
+          />
+        )}
+
+        <div className="player-grid-col player-grid-col--center">
+          <div className="player-grid-col-header">
             <div className="player-library-row">
               <PlayerLibraryRow />
             </div>
           </div>
+          <div className="player-grid-col-body">
+            <PlayerStage />
+          </div>
+        </div>
 
-          <div className="player-grid-reader-header">
+        {showReaderResize && (
+          <PanelResizeHandle
+            className="player-grid-resize player-grid-resize--reader"
+            label="Resize reading panel and player width"
+            active={resizing === "reader"}
+            onDragStart={(clientX) => beginResize("reader", clientX)}
+          />
+        )}
+
+        <div
+          className={`player-grid-col player-grid-col--reader${readerSidebarOpen ? "" : " is-collapsed"}`}
+        >
+          <div className="player-grid-col-header">
             <BookReaderPanel
               part="header"
               markdownPath={readerMarkdownPath}
@@ -285,45 +325,8 @@ function PlayerMainRow({
               onToggleCollapse={onToggleReaderSidebar}
             />
           </div>
-        </div>
-
-        <div className="player-grid-body-row">
-          {chaptersSidebarOpen && (
-            <div className="player-grid-chapters-body">
-              <ChapterPanel
-                part="body"
-                chapters={chapters}
-                activeChapter={activeChapter}
-                open
-                onSelect={(i) => void seekChapter(i)}
-              />
-            </div>
-          )}
-
-          {showChapterResize && (
-            <PanelResizeHandle
-              className="player-grid-resize player-grid-resize--chapters"
-              label="Resize chapters panel"
-              active={resizing === "chapters"}
-              onDragStart={(clientX) => beginResize("chapters", clientX)}
-            />
-          )}
-
-          <div className="player-grid-center-body">
-            <PlayerStage />
-          </div>
-
-          {showReaderResize && (
-            <PanelResizeHandle
-              className="player-grid-resize player-grid-resize--reader"
-              label="Resize reading panel and player width"
-              active={resizing === "reader"}
-              onDragStart={(clientX) => beginResize("reader", clientX)}
-            />
-          )}
-
           {readerSidebarOpen && (
-            <div className="player-grid-reader-body">
+            <div className="player-grid-col-body">
               <BookReaderPanel
                 part="body"
                 markdownPath={readerMarkdownPath}

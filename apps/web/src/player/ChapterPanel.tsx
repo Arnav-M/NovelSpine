@@ -1,7 +1,13 @@
 import { useEffect, useRef } from "react";
 import type { Chapter } from "../api/client";
 import { useRovingTabIndex } from "../a11y/useRovingTabIndex";
-import { formatTime } from "./timeUtils";
+import { ChaptersPanelIcon } from "./SidebarPanelIcons";
+import {
+  audiobookHasSectionKinds,
+  chapterListNumber,
+  formatTime,
+  sectionKindBadgeLabel,
+} from "./timeUtils";
 
 interface Props {
   chapters: Chapter[];
@@ -90,17 +96,21 @@ export default function ChapterPanel({
                 aria-controls="player-chapter-sidebar-body"
                 aria-label={collapsed ? "Show chapters" : "Hide chapters"}
                 title={collapsed ? "Show chapters" : "Hide chapters"}
-                onClick={onToggleCollapse}
-              >
+              onClick={onToggleCollapse}
+            >
+              {collapsed ? (
+                <ChaptersPanelIcon className="sidebar-notch-glyph" />
+              ) : (
                 <span
-                  className={`chapter-sidebar-notch-icon ${collapsed ? "" : "chapter-sidebar-notch-icon--open"}`}
+                  className="chapter-sidebar-notch-icon chapter-sidebar-notch-icon--open"
                   aria-hidden="true"
                 />
-              </button>
-            )}
-            <div className="chapter-sidebar-header">
-              <strong>Chapters</strong>
-              <span className="chapter-sidebar-count">0</span>
+              )}
+            </button>
+          )}
+          <div className="chapter-sidebar-header">
+            <strong>Chapters</strong>
+            <span className="chapter-sidebar-count">0</span>
             </div>
           </div>
         </div>
@@ -109,6 +119,8 @@ export default function ChapterPanel({
   }
 
   if (empty) return null;
+
+  const showKindBadges = audiobookHasSectionKinds(chapters);
 
   return (
     <aside
@@ -128,10 +140,14 @@ export default function ChapterPanel({
               title={collapsed ? "Show chapters" : "Hide chapters"}
               onClick={onToggleCollapse}
             >
-              <span
-                className={`chapter-sidebar-notch-icon ${collapsed ? "" : "chapter-sidebar-notch-icon--open"}`}
-                aria-hidden="true"
-              />
+              {collapsed ? (
+                <ChaptersPanelIcon className="sidebar-notch-glyph" />
+              ) : (
+                <span
+                  className="chapter-sidebar-notch-icon chapter-sidebar-notch-icon--open"
+                  aria-hidden="true"
+                />
+              )}
             </button>
           )}
           <div className="chapter-sidebar-header">
@@ -144,7 +160,10 @@ export default function ChapterPanel({
       {showBody && (
       <div id="player-chapter-sidebar-body" className="chapter-sidebar-body-panel">
         <div ref={listRef} className="chapter-sidebar-list" role="listbox" aria-label="Chapter list">
-          {chapters.map((ch, i) => (
+          {chapters.map((ch, i) => {
+            const listNum = chapterListNumber(chapters, i);
+            const kindBadge = showKindBadges ? sectionKindBadgeLabel(ch.kind) : null;
+            return (
             <button
               key={ch.id ?? `${ch.title}-${i}`}
               ref={(el) => {
@@ -170,10 +189,19 @@ export default function ChapterPanel({
                 onKeyDown(e, i);
               }}
             >
-              <span className="chapter-sidebar-title">{ch.title}</span>
+              <span className="chapter-sidebar-item-main">
+                {listNum && <span className="chapter-sidebar-number">{listNum}</span>}
+                <span className="chapter-sidebar-title-wrap">
+                  {kindBadge && (
+                    <span className="chapter-sidebar-kind-badge">{kindBadge}</span>
+                  )}
+                  <span className="chapter-sidebar-title">{ch.title}</span>
+                </span>
+              </span>
               <span className="chapter-sidebar-duration">{formatTime(ch.duration_ms ?? 0)}</span>
             </button>
-          ))}
+            );
+          })}
         </div>
         <p className="chapter-sidebar-hint">
           <span className="chapter-sidebar-hint-line">Press Enter to jump to a chapter.</span>

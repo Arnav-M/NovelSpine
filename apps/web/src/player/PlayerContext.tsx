@@ -174,6 +174,8 @@ export function PlayerProvider({
   const loadedMediaPathRef = useRef<string>("");
   const chaptersRef = useRef<Chapter[]>([]);
   const activeChapterRef = useRef(0);
+  const currentMsRef = useRef(0);
+  const chapterMsRef = useRef(0);
   const playingRef = useRef(false);
   const selectedRef = useRef<LibraryItem | null>(null);
   const speedRef = useRef(nearestSpeed(prefs.speed));
@@ -215,6 +217,7 @@ export function PlayerProvider({
   const refreshKeyRef = useRef("");
   const refreshPromiseRef = useRef<Promise<LibraryItem[]> | null>(null);
   const loadItemInFlightRef = useRef<Promise<void> | null>(null);
+  const resumeSaveSuspendedRef = useRef(false);
   const lastAudiobookRef = useRef(lastAudiobook);
   const markdownPathRef = useRef(markdownPath);
   const prevProjectFolderRef = useRef(projectFolder);
@@ -254,6 +257,39 @@ export function PlayerProvider({
     }
     setPlaying(false);
   }, []);
+
+  const findResumeEntry = useCallback(
+    (resume: Record<string, unknown>, audioPath: string): { ms?: number; chapter?: number } | undefined => {
+      const direct = resume[audioPath];
+      if (direct && typeof direct === "object") {
+        return direct as { ms?: number; chapter?: number };
+      }
+      const aliasKey = Object.keys(resume).find((key) => pathsEqual(key, audioPath));
+      if (!aliasKey) return undefined;
+      const entry = resume[aliasKey];
+      return entry && typeof entry === "object"
+        ? (entry as { ms?: number; chapter?: number })
+        : undefined;
+    },
+    [],
+  );
+
+  const persistResumeForPath = useCallback(
+    async (audioPath: string, ms: number, chapter: number, force = false) => {
+      if (!audioPath || (resumeSaveSuspendedRef.current && !force)) return;
+      try {
+        const resume = await getResume();
+        resume[audioPath] = {
+          ms: Math.max(0, Math.floor(ms)),
+          chapter,
+        };
+        await saveResume(resume);
+      } catch {
+        /* non-fatal */
+      }
+    },
+    [],
+  );
 
   const shouldOfferSwitch = useCallback((newPath: string) => {
     const current = selectedRef.current;
@@ -324,26 +360,35 @@ export function PlayerProvider({
     [onPrefsChange],
   );
 
-  const chapterMediaPath = useCallback(
-    (index: number): string => {
-      const ch = chapters[index];
-      if (ch?.file) return ch.file;
-      return baseMediaPathRef.current;
-    },
-    [chapters],
-  );
+  const resolveChapterMediaPath = useCallback((chapterList: Chapter[], index: number): string => {
+    const ch = chapterList[index];
+    if (ch?.file) return ch.file;
+    return baseMediaPathRef.current;
+  }, []);
 
   const loadChapterMedia = useCallback(
-    async (index: number, offsetMs: number, spd: number, autoplay: boolean) => {
-      const path = chapterMediaPath(index);
+    async (
+      index: number,
+      offsetMs: number,
+      spd: number,
+      autoplay: boolean,
+      chapterList: Chapter[] = chaptersRef.current,
+      ownerAudioPath?: string,
+    ) => {
+      if (!chapterList.length || index < 0 || index >= chapterList.length) return;
+      const stillOwner = () =>
+        !ownerAudioPath || pathsEqual(selectedRef.current?.audio_path ?? "", ownerAudioPath);
+      if (!stillOwner()) return;
+
+      const path = resolveChapterMediaPath(chapterList, index);
       if (!path) return;
-      const ch = chapters[index];
-      const merged = isMergedAudiobook(chapters);
+      const ch = chapterList[index];
+      const merged = isMergedAudiobook(chapterList);
       const audioSeekMs = merged ? (ch?.start_ms ?? 0) + offsetMs : offsetMs;
       setSpeedStatus(Math.abs(spd - 1) >= 0.01 ? `Preparing ${spd}× playback…` : null);
       try {
         const url = await resolveSpeedMediaUrl(path, spd);
-        if (!mountedRef.current || !url) return;
+        if (!mountedRef.current || !stillOwner() || !url) return;
         const audio = audioRef.current;
         if (!audio) return;
         const wasPlaying = !audio.paused;
@@ -361,21 +406,27 @@ export function PlayerProvider({
             audio.load();
           });
         }
+        if (!stillOwner()) return;
         audio.currentTime = audioSeekMs / 1000;
+        const bookMs = merged ? audioSeekMs : bookPositionMs(chapterList, index, offsetMs);
+        chapterMsRef.current = offsetMs;
+        currentMsRef.current = bookMs;
         setChapterMs(offsetMs);
         setActiveChapter(index);
-        setCurrentMs(merged ? audioSeekMs : bookPositionMs(chapters, index, offsetMs));
+        setCurrentMs(bookMs);
         if (autoplay || wasPlaying) {
           await audio.play();
           setPlaying(true);
         }
       } catch (err) {
-        onLog(err instanceof Error ? err.message : String(err), "danger");
+        if (stillOwner()) {
+          onLog(err instanceof Error ? err.message : String(err), "danger");
+        }
       } finally {
         if (mountedRef.current) setSpeedStatus(null);
       }
     },
-    [chapterMediaPath, chapters, onLog],
+    [onLog, resolveChapterMediaPath],
   );
 
   const refreshLibrary = useCallback(async (): Promise<LibraryItem[]> => {
@@ -435,17 +486,26 @@ export function PlayerProvider({
         const generation = ++loadGenerationRef.current;
         const isAlive = () => generation === loadGenerationRef.current && mountedRef.current;
 
+        const previous = selectedRef.current;
+        if (previous && !pathsEqual(previous.audio_path, item.audio_path)) {
+          pausePlayback();
+          await persistResumeForPath(
+            previous.audio_path,
+            currentMsRef.current,
+            activeChapterRef.current,
+            true,
+          );
+        }
+
+        resumeSaveSuspendedRef.current = true;
         try {
-          const previous = selectedRef.current;
-          if (previous && !pathsEqual(previous.audio_path, item.audio_path)) {
-            pausePlayback();
-          }
           setSelected(item);
           setCoverUrl(null);
           loadedMediaPathRef.current = "";
           const data = await getChapters(item.audio_path);
           if (!isAlive()) return;
           const nextChapters = Array.isArray(data.chapters) ? data.chapters : [];
+          chaptersRef.current = nextChapters;
           setChapters(nextChapters);
           baseMediaPathRef.current = data.playable_path ?? item.audio_path;
           const cover = await resolveItemCover(item);
@@ -457,7 +517,7 @@ export function PlayerProvider({
 
           const resume = await getResume();
           if (!isAlive()) return;
-          const saved = resume[item.audio_path] as { ms?: number; chapter?: number } | undefined;
+          const saved = findResumeEntry(resume, item.audio_path);
           let startIndex = 0;
           let offsetMs = 0;
           if (saved?.ms != null && Number.isFinite(saved.ms) && nextChapters.length) {
@@ -466,7 +526,7 @@ export function PlayerProvider({
             offsetMs = seek.offsetMs;
           }
           if (!isAlive()) return;
-          await loadChapterMedia(startIndex, offsetMs, speed, false);
+          await loadChapterMedia(startIndex, offsetMs, speed, false, nextChapters, item.audio_path);
         } catch (err) {
           if (!isAlive()) return;
           const message = err instanceof Error ? err.message : String(err);
@@ -475,11 +535,16 @@ export function PlayerProvider({
             if (pathsEqual(selectedRef.current?.audio_path ?? "", item.audio_path)) {
               setSelected(null);
               setChapters([]);
+              chaptersRef.current = [];
               setPlayableUrl(null);
             }
             return;
           }
           onLog(message, "danger");
+        } finally {
+          if (generation === loadGenerationRef.current) {
+            resumeSaveSuspendedRef.current = false;
+          }
         }
       };
 
@@ -501,7 +566,7 @@ export function PlayerProvider({
         }
       }
     },
-    [loadChapterMedia, onLog, pausePlayback, resolveItemCover, speed],
+    [findResumeEntry, loadChapterMedia, onLog, pausePlayback, persistResumeForPath, resolveItemCover, speed],
   );
 
   const loadFromPath = useCallback(
@@ -554,6 +619,11 @@ export function PlayerProvider({
     setCurrentMs(0);
     setChapterMs(0);
     setActiveChapter(0);
+    currentMsRef.current = 0;
+    chapterMsRef.current = 0;
+    activeChapterRef.current = 0;
+    chaptersRef.current = [];
+    loadedMediaPathRef.current = "";
     lastLoadedRef.current = "";
   }, [pausePlayback]);
 
@@ -655,18 +725,10 @@ export function PlayerProvider({
   }, [volume, playableUrl]);
 
   const persistResume = useCallback(async () => {
-    if (!selected || !audioRef.current) return;
-    try {
-      const resume = await getResume();
-      resume[selected.audio_path] = {
-        ms: Math.floor(currentMs),
-        chapter: activeChapter,
-      };
-      await saveResume(resume);
-    } catch {
-      /* non-fatal */
-    }
-  }, [activeChapter, currentMs, selected]);
+    const item = selectedRef.current;
+    if (!item?.audio_path || !audioRef.current) return;
+    await persistResumeForPath(item.audio_path, currentMsRef.current, activeChapterRef.current);
+  }, [persistResumeForPath]);
 
   const togglePlay = useCallback(async () => {
     const audio = audioRef.current;
@@ -710,6 +772,8 @@ export function PlayerProvider({
       setActiveChapter(index);
       setChapterMs(offsetMs);
       setCurrentMs(optimisticMs);
+      chapterMsRef.current = offsetMs;
+      currentMsRef.current = optimisticMs;
       await loadChapterMedia(index, offsetMs, speed, playing);
     },
     [chapters, loadChapterMedia, playing, speed],
@@ -991,11 +1055,17 @@ export function PlayerProvider({
               setActiveChapter(pending.index!);
               setChapterMs(pending.offsetMs!);
               setCurrentMs(pending.absoluteMs!);
+              chapterMsRef.current = pending.offsetMs!;
+              currentMsRef.current = pending.absoluteMs!;
               return;
             }
             const chaptersList = chaptersRef.current;
-            setChapterMs(pending.clamped!);
-            setCurrentMs(bookPositionMs(chaptersList, pending.idx!, pending.clamped!));
+            const nextChapterMs = pending.clamped!;
+            const nextBookMs = bookPositionMs(chaptersList, pending.idx!, nextChapterMs);
+            setChapterMs(nextChapterMs);
+            setCurrentMs(nextBookMs);
+            chapterMsRef.current = nextChapterMs;
+            currentMsRef.current = nextBookMs;
           });
         }}
         onEnded={() => {

@@ -22,9 +22,56 @@ export function bookPositionMs(chapters: Chapter[], index: number, offsetMs: num
   return pos + offsetMs;
 }
 
+export function isChapterSection(ch: Chapter): boolean {
+  if (ch.kind === "chapter") return true;
+  if (ch.kind && ch.kind !== "chapter") return false;
+  return /^chapter\b/i.test(ch.title);
+}
+
+export function chapterSections(chapters: Chapter[]): Chapter[] {
+  return chapters.filter(isChapterSection);
+}
+
+/** Index label for the active section — "Chapter N of M" for fiction chapters, else "Part X of Y". */
+export function chapterLabelFor(chapters: Chapter[], index: number): string {
+  if (index < 0 || index >= chapters.length) return "";
+  const ch = chapters[index];
+  if (isChapterSection(ch)) {
+    const numbered = chapters.slice(0, index + 1).filter(isChapterSection).length;
+    const total = chapterSections(chapters).length;
+    return total > 1 ? `Chapter ${numbered} of ${total}` : `Chapter ${numbered}`;
+  }
+  const total = chapters.length;
+  const num = index + 1;
+  return total > 1 ? `Part ${num} of ${total}` : `Part ${num}`;
+}
+
+/** @deprecated Use chapterLabelFor(chapters, index) */
 export function chapterLabel(activeChapter: number, total: number): string {
   if (total <= 0) return "";
   return total > 1 ? `Part ${activeChapter + 1} of ${total}` : `Part ${activeChapter + 1}`;
+}
+
+export function sectionKindBadgeLabel(kind: string | null | undefined): string | null {
+  if (!kind || kind === "chapter") return null;
+  const labels: Record<string, string> = {
+    title: "title",
+    front_matter: "front",
+    back_matter: "back",
+    other: "other",
+  };
+  return labels[kind] ?? kind.replace(/_/g, " ");
+}
+
+export function audiobookHasSectionKinds(chapters: Chapter[]): boolean {
+  return chapters.some((ch) => sectionKindBadgeLabel(ch.kind) != null);
+}
+
+export function chapterListNumber(chapters: Chapter[], index: number): string | null {
+  const ch = chapters[index];
+  if (!ch || !isChapterSection(ch)) return null;
+  const num = chapters.slice(0, index + 1).filter(isChapterSection).length;
+  return `${num}.`;
 }
 
 export function totalBookDurationMs(chapters: Chapter[]): number {

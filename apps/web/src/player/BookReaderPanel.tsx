@@ -1,6 +1,9 @@
-import { memo, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getChapterText } from "../api/client";
-import { readerLineState } from "./readerTiming";
+import { usePlayerPlayback } from "./PlayerContext";
+import { lineSeekMs, readerLineState } from "./readerTiming";
+import { ReadingPanelIcon } from "./SidebarPanelIcons";
+import { useReaderPanelState } from "./useReaderPanelState";
 
 interface Props {
   markdownPath: string | null;
@@ -29,8 +32,13 @@ function BookReaderPanel({
   part = "all",
   onToggleCollapse,
 }: Props) {
+  const { seekChapter } = usePlayerPlayback();
+  const { displayMode, followPlayback, setDisplayMode, setFollowPlayback } =
+    useReaderPanelState(activeChapter);
   const listRef = useRef<HTMLDivElement>(null);
   const lineRefs = useRef<(HTMLDivElement | null)[]>([]);
+  const followPlaybackRef = useRef(followPlayback);
+  const ignoreUserScrollUntilRef = useRef(0);
   const [lines, setLines] = useState<string[]>([]);
   const [lineWeights, setLineWeights] = useState<number[]>([]);
   const [lineStartMs, setLineStartMs] = useState<number[]>([]);
@@ -40,8 +48,8 @@ function BookReaderPanel({
   const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
-    lineRefs.current.length = lines.length;
-  }, [lines.length]);
+    followPlaybackRef.current = followPlayback;
+  }, [followPlayback]);
 
   useEffect(() => {
     if (!markdownPath) {
@@ -83,7 +91,7 @@ function BookReaderPanel({
         setLines([]);
         setLineWeights([]);
         setLineStartMs([]);
-      setSectionDurationMs(0);
+        setSectionDurationMs(0);
         setSectionTitle(chapterTitle);
         setLoadError(err instanceof Error ? err.message : "Could not load chapter text.");
         setLoadState("empty");
@@ -94,6 +102,10 @@ function BookReaderPanel({
     };
   }, [activeChapter, audioPath, chapterId, chapterTitle, markdownPath]);
 
+  useEffect(() => {
+    lineRefs.current.length = lines.length;
+  }, [lines.length]);
+
   const { index: currentLine, lineProgress } = useMemo(
     () =>
       readerLineState(lineWeights, lineStartMs, chapterMs, chapterDurationMs, {
@@ -103,8 +115,13 @@ function BookReaderPanel({
     [chapterDurationMs, chapterMs, lineStartMs, lineWeights, playbackSpeed, sectionDurationMs],
   );
 
-  useEffect(() => {
-    if (collapsed || currentLine < 0) return;
+  const markProgrammaticScroll = useCallback(() => {
+    // Grace period covers layout reflow after line reveal in follow mode.
+    ignoreUserScrollUntilRef.current = Date.now() + 350;
+  }, []);
+
+  const scrollToActiveLine = useCallback(() => {
+    if (currentLine < 0) return;
     const el = lineRefs.current[currentLine];
     const list = listRef.current;
     if (!el || !list) return;
@@ -112,15 +129,59 @@ function BookReaderPanel({
     const elBottom = elTop + el.offsetHeight;
     const viewTop = list.scrollTop;
     const viewBottom = viewTop + list.clientHeight;
+    let nextScrollTop: number | null = null;
     if (elTop < viewTop + list.clientHeight * 0.3) {
-      list.scrollTop = Math.max(0, elTop - list.clientHeight * 0.38);
+      nextScrollTop = Math.max(0, elTop - list.clientHeight * 0.38);
     } else if (elBottom > viewBottom - list.clientHeight * 0.3) {
-      list.scrollTop = elBottom - list.clientHeight * 0.62;
+      nextScrollTop = elBottom - list.clientHeight * 0.62;
     }
-  }, [collapsed, currentLine]);
+    if (nextScrollTop == null) return;
+    markProgrammaticScroll();
+    list.scrollTop = nextScrollTop;
+  }, [currentLine, markProgrammaticScroll]);
+
+  useEffect(() => {
+    if (collapsed || !followPlayback) return;
+    scrollToActiveLine();
+  }, [collapsed, currentLine, followPlayback, scrollToActiveLine]);
+
+  const handleListScroll = useCallback(() => {
+    if (Date.now() < ignoreUserScrollUntilRef.current) return;
+    if (!followPlaybackRef.current) return;
+    setFollowPlayback(false);
+  }, [setFollowPlayback]);
+
+  const handleLineClick = useCallback(
+    (lineIndex: number) => {
+      const ms = lineSeekMs(lineIndex, lineWeights, lineStartMs, chapterDurationMs, {
+        playbackSpeed,
+        sectionDurationMs,
+      });
+      void seekChapter(activeChapter, ms);
+      markProgrammaticScroll();
+      setFollowPlayback(true);
+    },
+    [
+      activeChapter,
+      chapterDurationMs,
+      lineStartMs,
+      lineWeights,
+      markProgrammaticScroll,
+      playbackSpeed,
+      sectionDurationMs,
+      seekChapter,
+      setFollowPlayback,
+    ],
+  );
 
   const visibleLineCount =
-    currentLine >= 0 ? Math.min(lines.length, currentLine + 3) : lines.length > 0 ? 1 : 0;
+    displayMode === "browse"
+      ? lines.length
+      : currentLine >= 0
+        ? Math.min(lines.length, currentLine + 3)
+        : lines.length > 0
+          ? 1
+          : 0;
 
   const showHeader = part === "all" || part === "header";
   const showBody = (part === "all" || part === "body") && !collapsed;
@@ -143,16 +204,36 @@ function BookReaderPanel({
               title={collapsed ? "Show reading panel" : "Hide reading panel"}
               onClick={onToggleCollapse}
             >
-              <span
-                className={`reader-sidebar-notch-icon ${collapsed ? "" : "reader-sidebar-notch-icon--open"}`}
-                aria-hidden="true"
-              />
+              {collapsed ? (
+                <ReadingPanelIcon className="sidebar-notch-glyph" />
+              ) : (
+                <span
+                  className="reader-sidebar-notch-icon reader-sidebar-notch-icon--open"
+                  aria-hidden="true"
+                />
+              )}
             </button>
           )}
           <div className="reader-sidebar-header">
             <strong>Reading</strong>
-            {sectionTitle && loadState === "ready" && (
-              <span className="reader-sidebar-section">{sectionTitle}</span>
+            {loadState === "ready" && (
+              <div className="reader-sidebar-header-actions">
+                <button
+                  type="button"
+                  className={`reader-sidebar-mode-btn${displayMode === "browse" ? " reader-sidebar-mode-btn--active" : ""}`}
+                  aria-pressed={displayMode === "browse"}
+                  title={
+                    displayMode === "browse"
+                      ? "Showing full chapter — switch to follow-along reveal"
+                      : "Show full chapter text"
+                  }
+                  onClick={() =>
+                    setDisplayMode((mode) => (mode === "follow" ? "browse" : "follow"))
+                  }
+                >
+                  {displayMode === "browse" ? "Follow" : "Full"}
+                </button>
+              </div>
             )}
           </div>
         </div>
@@ -160,7 +241,12 @@ function BookReaderPanel({
       )}
       {showBody && (
       <div id="player-reader-sidebar-body" className="reader-sidebar-body-panel">
-        <div ref={listRef} className="reader-sidebar-list">
+        {sectionTitle && loadState === "ready" && (
+          <div className="reader-sidebar-chapter-bar" title={sectionTitle}>
+            {sectionTitle}
+          </div>
+        )}
+        <div ref={listRef} className="reader-sidebar-list" onScroll={handleListScroll}>
           {loadState === "idle" && (
             <p className="reader-sidebar-placeholder">Load an audiobook to follow along.</p>
           )}
@@ -193,8 +279,18 @@ function BookReaderPanel({
                     ref={(el) => {
                       lineRefs.current[i] = el;
                     }}
+                    role="button"
+                    tabIndex={0}
                     className={`reader-sidebar-line-row${isActive ? " reader-sidebar-line-row--active" : ""}${isPast ? " reader-sidebar-line-row--past" : ""}${isUpcoming ? " reader-sidebar-line-row--upcoming" : ""}${isAnnouncement ? " reader-sidebar-line-row--announcement" : ""}`}
                     aria-current={isActive ? "true" : undefined}
+                    title="Click to seek to this line"
+                    onClick={() => handleLineClick(i)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        handleLineClick(i);
+                      }
+                    }}
                   >
                     <span className="reader-sidebar-line-marker" aria-hidden="true" />
                     <div className="reader-sidebar-line-content">
@@ -214,7 +310,24 @@ function BookReaderPanel({
           )}
         </div>
         <p className="reader-sidebar-hint">
-          <span className="reader-sidebar-hint-line">Highlighted line tracks playback.</span>
+          {!followPlayback && loadState === "ready" ? (
+            <button
+              type="button"
+              className="reader-sidebar-resume-follow"
+              onClick={() => {
+                setFollowPlayback(true);
+              }}
+            >
+              Resume follow
+            </button>
+          ) : (
+            <>
+              <span className="reader-sidebar-hint-line">Highlighted line tracks playback.</span>
+              {displayMode === "browse" && (
+                <span className="reader-sidebar-hint-line">Click a line to seek audio.</span>
+              )}
+            </>
+          )}
         </p>
       </div>
       )}

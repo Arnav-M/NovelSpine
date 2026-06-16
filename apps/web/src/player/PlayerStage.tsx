@@ -3,7 +3,7 @@ import { usePlayerPlayback } from "./PlayerContext";
 import BookTimeline from "./BookTimeline";
 import SeekBar from "./SeekBar";
 import TransportControls from "./TransportControls";
-import { chapterLabel, formatTime } from "./timeUtils";
+import { chapterLabelFor, formatTime } from "./timeUtils";
 
 export default function PlayerStage() {
   const p = usePlayerPlayback();
@@ -22,7 +22,9 @@ export default function PlayerStage() {
 
           <div className="player-hero-meta">
             <h3 className="player-chapter-title">
-              {p.chapters.length ? chapterLabel(p.activeChapter, p.chapters.length) : "No chapter"}
+              {p.chapters.length
+                ? chapterLabelFor(p.chapters, p.activeChapter)
+                : "No chapter"}
             </h3>
             {p.chapterTitle && p.chapters.length > 0 && (
               <p className="player-chapter-name">{p.chapterTitle}</p>
