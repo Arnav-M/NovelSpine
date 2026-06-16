@@ -1,0 +1,4 @@
+[[permission]]
+identifier = "allow-open-with-app"
+description = "Show the system Open with dialog for audiobook files."
+commands.allow = ["open_with_app"]

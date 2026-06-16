@@ -1,0 +1,4 @@
+[[permission]]
+identifier = "allow-reveal-in-explorer"
+description = "Reveal files and folders in the system file manager."
+commands.allow = ["reveal_in_explorer"]

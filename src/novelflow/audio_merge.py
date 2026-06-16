@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import os
-import shutil
 import subprocess
 import tempfile
 import threading
@@ -12,6 +11,8 @@ from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
+
+from novelflow.ffmpeg_path import find_ffmpeg, find_ffprobe
 
 AAC_BITRATE = os.environ.get("NOVELFLOW_AAC_BITRATE", "64k")
 
@@ -21,10 +22,11 @@ class ChapterMarker:
     title: str
     start_ms: int
     end_ms: int
+    id: str = ""
 
 
 def _probe_duration_ms(path: Path) -> int:
-    ffprobe = shutil.which("ffprobe")
+    ffprobe = find_ffprobe()
     if not ffprobe:
         return 0
     try:
@@ -42,9 +44,9 @@ def _probe_duration_ms(path: Path) -> int:
         return 0
 
 
-def build_chapter_markers(section_files: list[tuple[str, Path]]) -> list[ChapterMarker]:
+def build_chapter_markers(section_files: list[tuple[str, str, Path]]) -> list[ChapterMarker]:
     """Probe each section's real duration (in parallel) and lay out chapters."""
-    paths = [path for _, path in section_files]
+    paths = [path for _, _, path in section_files]
     # ffprobe is I/O bound; probing sequentially is the slow part of "merging"
     # for books with dozens of chapters, so fan the probes out.
     with ThreadPoolExecutor(max_workers=min(8, max(1, len(paths)))) as pool:
@@ -52,11 +54,18 @@ def build_chapter_markers(section_files: list[tuple[str, Path]]) -> list[Chapter
 
     markers: list[ChapterMarker] = []
     cursor = 0
-    for (title, path), duration in zip(section_files, durations):
+    for (section_id, title, path), duration in zip(section_files, durations):
         if duration <= 0:
             # ~128 kbps MP3 ≈ 16 bytes/ms; better than a blind constant.
             duration = max(path.stat().st_size // 16, 1000)
-        markers.append(ChapterMarker(title=title, start_ms=cursor, end_ms=cursor + duration))
+        markers.append(
+            ChapterMarker(
+                id=section_id,
+                title=title,
+                start_ms=cursor,
+                end_ms=cursor + duration,
+            )
+        )
         cursor += duration
     return markers
 
@@ -128,7 +137,7 @@ def _encode_section_aac(ffmpeg: str, src: Path, dst: Path, bitrate: str) -> Path
 
 
 def merge_audiobook(
-    section_files: list[tuple[str, Path]],
+    section_files: list[tuple[str, str, Path]],
     output_path: Path,
     *,
     audio_format: str = "m4b",
@@ -145,11 +154,11 @@ def merge_audiobook(
     if not section_files:
         raise ValueError("No audio sections to merge")
 
-    ffmpeg = shutil.which("ffmpeg")
+    ffmpeg = find_ffmpeg()
     if not ffmpeg:
         raise RuntimeError(
             "ffmpeg is required to build audiobook files. "
-            "Install ffmpeg and add it to your PATH."
+            "Install ffmpeg or reinstall Novelflow with bundled ffmpeg."
         )
 
     fmt = audio_format.lower().lstrip(".")
@@ -172,7 +181,7 @@ def merge_audiobook(
             # chapters with a stream copy. No re-encode, effectively instant.
             list_file = tmp_path / "concat.txt"
             list_file.write_text(
-                "\n".join(f"file '{path.resolve().as_posix()}'" for _, path in section_files),
+                "\n".join(f"file '{path.resolve().as_posix()}'" for _, _, path in section_files),
                 encoding="utf-8",
             )
             merged = tmp_path / "merged.mp3"
@@ -203,7 +212,7 @@ def merge_audiobook(
             with ThreadPoolExecutor(max_workers=workers) as pool:
                 futures = {
                     pool.submit(_encode_section_aac, ffmpeg, path, encoded[i], AAC_BITRATE): i
-                    for i, (_, path) in enumerate(section_files)
+                    for i, (_, _, path) in enumerate(section_files)
                 }
                 for future in as_completed(futures):
                     future.result()
@@ -234,13 +243,14 @@ def merge_audiobook(
 def update_manifest_timestamps(manifest_path: Path, markers: list[ChapterMarker]) -> None:
     """Attach start/end ms to manifest sections for in-app navigation."""
     data = json.loads(manifest_path.read_text(encoding="utf-8"))
+    id_to_marker = {m.id: m for m in markers if m.id}
     title_to_marker = {m.title: m for m in markers}
     for section in data.get("sections", []):
         if not section.get("enabled", True):
             section["start_ms"] = None
             section["end_ms"] = None
             continue
-        marker = title_to_marker.get(section["title"])
+        marker = id_to_marker.get(section.get("id")) or title_to_marker.get(section["title"])
         if marker:
             section["start_ms"] = marker.start_ms
             section["end_ms"] = marker.end_ms

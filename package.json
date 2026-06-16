@@ -1,0 +1,25 @@
+{
+  "name": "novelflow-desktop",
+  "private": true,
+  "version": "3.0.0",
+  "workspaces": [
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev -w @novelflow/web",
+    "build": "npm run build -w @novelflow/web",
+    "start": "concurrently -k -n sidecar,web -c blue,green \"npm run sidecar\" \"npm run dev\"",
+    "sidecar": "python -m novelflow.api --port 8765",
+    "build:sidecar": "python -m PyInstaller novelflow-sidecar.spec",
+    "build:sidecar:win": "powershell -ExecutionPolicy Bypass -File scripts/build-sidecar.ps1",
+    "fetch:ffmpeg": "powershell -ExecutionPolicy Bypass -File scripts/fetch-ffmpeg.ps1",
+    "clean": "powershell -ExecutionPolicy Bypass -File scripts/clean.ps1",
+    "tauri": "tauri dev --config src-tauri/tauri.conf.json",
+    "tauri:build": "tauri build --config src-tauri/tauri.conf.json",
+    "package:win": "powershell -ExecutionPolicy Bypass -File scripts/package.ps1"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.2.7",
+    "concurrently": "^9.1.2"
+  }
+}

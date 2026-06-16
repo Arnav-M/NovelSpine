@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from pathlib import Path
 
-from novelflow.pdf_extract import extract_pdf_text
+from novelflow.pdf_extract import extract_first_page_cover_image, extract_pdf_text
 from novelflow.pdf_italics import extract_italic_lines
 from novelflow.refine import refine_markdown
 from novelflow.text_cleanup import sanitize_pdf_text
@@ -33,6 +33,7 @@ def convert_pdf(
     audio_format: str = "m4b",
     disabled_section_ids: set[str] | None = None,
     chapters_and_title_only: bool = True,
+    keep_sections: bool = True,
     cancel_check: Callable[[], bool] | None = None,
 ) -> Path:
     """
@@ -99,6 +100,10 @@ def convert_pdf(
     if italic_hints:
         report(54, f"  Found {len(italic_hints):,} italic line(s) in PDF fonts.")
 
+    cover_path = out.with_name(f"{out.stem}.cover.png")
+    if extract_first_page_cover_image(pdf, cover_path):
+        report(56, f"  Cover image: {cover_path.name}")
+
     _check_cancel(cancel_check)
     report(58, "Refining paragraphs, chapters, and scene headers...")
     readable = refine_markdown(raw_md, italic_hints=italic_hints or None)
@@ -124,6 +129,7 @@ def convert_pdf(
             audio_format=audio_format,
             disabled_section_ids=disabled_section_ids,
             chapters_and_title_only=chapters_and_title_only,
+            keep_sections=keep_sections,
             progress=log,
             on_progress=audio_progress,
             cancel_check=cancel_check,

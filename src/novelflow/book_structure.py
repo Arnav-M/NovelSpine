@@ -8,6 +8,7 @@ from dataclasses import asdict, dataclass, field
 from enum import Enum
 from pathlib import Path
 
+from novelflow.cover_art import find_cover_in_markdown as find_cover_image_path
 from novelflow.refine import BACK_MATTER, CHAPTER_RE, GENERIC_HEADING_RE, chapter_slug
 
 SKIP_SECTIONS = frozenset({"navigation"})
@@ -137,6 +138,146 @@ def _norm_title_text(text: str) -> str:
     return re.sub(r"[^a-z0-9]+", " ", text.lower()).strip()
 
 
+def text_to_reader_lines(text: str) -> list[str]:
+    """Split section prose into short lines for synced reading display."""
+    plain = _strip_markdown_for_tts(text)
+    if not plain:
+        return []
+    lines: list[str] = []
+    for para in re.split(r"\n\s*\n", plain):
+        chunk = para.strip()
+        if not chunk:
+            continue
+        parts = re.split(r"(?<=[.!?])\s+", chunk)
+        for part in parts:
+            sentence = part.strip()
+            if sentence:
+                lines.append(sentence)
+    return lines if lines else [plain]
+
+
+def audiobook_section_order(manifest: BookManifest) -> list[BookSection]:
+    """Sections in the same order as synthesized audiobook chapters."""
+    return apply_default_audiobook_filter(manifest).enabled_sections()
+
+
+def section_by_id(manifest: BookManifest, section_id: str | None) -> BookSection | None:
+    if not section_id:
+        return None
+    for section in manifest.sections:
+        if section.id == section_id:
+            return section
+    return None
+
+
+def chapter_number_in_audiobook(manifest: BookManifest, section: BookSection) -> int | None:
+    if section.kind != SectionKind.CHAPTER:
+        return None
+    number = 0
+    for candidate in audiobook_section_order(manifest):
+        if candidate.kind != SectionKind.CHAPTER:
+            continue
+        number += 1
+        if candidate.id == section.id:
+            return number
+    return _parse_chapter_number(section.title)
+
+
+def chapter_announcement_line(section: BookSection, number: int) -> str | None:
+    """Spoken chapter intro merged into each chapter's audio track."""
+    if section.kind != SectionKind.CHAPTER:
+        return None
+    title = section.title.strip()
+    if _CHAPTER_HEADING_RE.match(title):
+        return title
+    if not title or re.match(r"^[\divxlcdm.\s]+$", title, re.I):
+        return f"Chapter {number}"
+    return f"Chapter {number}. {title}"
+
+
+def estimate_speech_duration_ms(text: str, *, wpm: float = 158.0) -> int:
+    words = len(text.split())
+    if words <= 0:
+        return 0
+    return max(900, int(words / wpm * 60_000))
+
+
+def _line_speech_weights(lines: list[str]) -> list[int]:
+    """Word counts per line — proportional to TTS time for each sentence."""
+    return [max(len(line.split()), 1) for line in lines]
+
+
+def reader_lines_for_section(
+    section: BookSection,
+    chapter_number: int | None,
+) -> tuple[list[str], list[int]]:
+    """Reader lines with spoken chapter intro prepended when applicable."""
+    body_lines = text_to_reader_lines(section.text)
+    if chapter_number is None:
+        lines = body_lines
+    else:
+        intro = chapter_announcement_line(section, chapter_number)
+        if not intro:
+            lines = body_lines
+        elif body_lines and _norm_title_text(body_lines[0]) == _norm_title_text(intro):
+            lines = body_lines
+        else:
+            lines = [intro, *body_lines]
+    return lines, _line_speech_weights(lines)
+
+
+def section_for_audio_chapter(
+    manifest: BookManifest,
+    chapter_index: int,
+    *,
+    chapter_id: str | None = None,
+    chapter_title: str | None = None,
+) -> BookSection | None:
+    """Map a player chapter to markdown using audiobook chapter order."""
+    sections = audiobook_section_order(manifest)
+
+    found = section_by_id(manifest, chapter_id)
+    if found is not None:
+        return found
+
+    if chapter_title:
+        target = _norm_title_text(chapter_title)
+        for section in sections:
+            if _norm_title_text(section.title) == target:
+                return section
+        title_num = _parse_chapter_number(chapter_title)
+        if title_num is not None:
+            for section in sections:
+                if section.kind == SectionKind.CHAPTER and _parse_chapter_number(section.title) == title_num:
+                    return section
+
+    if 0 <= chapter_index < len(sections):
+        return sections[chapter_index]
+
+    if chapter_title:
+        target = _norm_title_text(chapter_title)
+        for section in manifest.enabled_sections():
+            if _norm_title_text(section.title) == target:
+                return section
+    return None
+
+
+def section_for_chapter_index(
+    manifest: BookManifest,
+    chapter_index: int,
+    *,
+    chapter_title: str | None = None,
+    chapter_id: str | None = None,
+) -> BookSection | None:
+    """Map an audiobook chapter index to its markdown section."""
+    return section_for_audio_chapter(
+        manifest,
+        chapter_index,
+        chapter_id=chapter_id,
+        chapter_title=chapter_title,
+    )
+
+
 def _collapse_title_sections(
     title_sections: list[BookSection], book_title: str,
 ) -> tuple[list[BookSection], list[BookSection]]:
@@ -183,6 +324,91 @@ def _collapse_title_sections(
     keep.title = "Title"
     keep.text = ". ".join(s.text.strip().rstrip(".") for s in short if s.text.strip())
     return [keep], demoted
+
+
+_ONES = {
+    "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7,
+    "eight": 8, "nine": 9, "ten": 10, "eleven": 11, "twelve": 12, "thirteen": 13,
+    "fourteen": 14, "fifteen": 15, "sixteen": 16, "seventeen": 17, "eighteen": 18,
+    "nineteen": 19,
+}
+_TENS = {
+    "twenty": 20, "thirty": 30, "forty": 40, "fifty": 50, "sixty": 60,
+    "seventy": 70, "eighty": 80, "ninety": 90,
+}
+_CHAPTER_HEADING_RE = re.compile(r"^(?:Chapter|Part)\s+(.+)$", re.I)
+
+
+def _words_to_int(words: str) -> int | None:
+    """Parse hyphenated or spaced number words (e.g. ``Sixty-Nine`` → 69)."""
+    total = 0
+    for part in re.split(r"[\s-]+", words.strip().lower()):
+        if not part:
+            continue
+        if part in _ONES:
+            total += _ONES[part]
+        elif part in _TENS:
+            total += _TENS[part]
+        else:
+            return None
+    return total or None
+
+
+def _parse_chapter_number(title: str) -> int | None:
+    """Extract a sortable chapter index from titles like ``Chapter Sixty-Nine``."""
+    stripped = title.strip()
+    if re.match(r"^Prologue$", stripped, re.I):
+        return 0
+    if re.match(r"^Epilogue$", stripped, re.I):
+        return 1_000_000
+    match = _CHAPTER_HEADING_RE.match(stripped)
+    if not match:
+        return None
+    rest = match.group(1).strip()
+    if rest.isdigit():
+        return int(rest)
+    roman = re.match(r"^[IVXLC]+$", rest, re.I)
+    if roman:
+        vals = {"I": 1, "V": 5, "X": 10, "L": 50, "C": 100}
+        num, prev = 0, 0
+        for ch in reversed(rest.upper()):
+            v = vals.get(ch, 0)
+            num += v if v >= prev else -v
+            prev = v
+        return num or None
+    return _words_to_int(rest)
+
+
+def _normalize_chapters(
+    chapters: list[BookSection],
+) -> tuple[list[BookSection], list[BookSection]]:
+    """Sort numbered chapters and drop duplicate stubs (e.g. back-matter Author's Note)."""
+    if not chapters:
+        return [], []
+
+    by_number: dict[int, BookSection] = {}
+    unnumbered: list[tuple[int, BookSection]] = []
+    demoted: list[BookSection] = []
+
+    for index, section in enumerate(chapters):
+        number = _parse_chapter_number(section.title)
+        if number is None:
+            unnumbered.append((index, section))
+            continue
+        existing = by_number.get(number)
+        if existing is None or len(section.text.strip()) > len(existing.text.strip()):
+            if existing is not None:
+                existing.kind = SectionKind.BACK_MATTER
+                demoted.append(existing)
+            by_number[number] = section
+        else:
+            section.kind = SectionKind.BACK_MATTER
+            demoted.append(section)
+
+    ordered = [by_number[n] for n in sorted(by_number)]
+    for _, section in sorted(unnumbered, key=lambda item: item[0]):
+        ordered.append(section)
+    return ordered, demoted
 
 
 def _unique_id(title: str, existing: set[str]) -> str:
@@ -341,6 +567,9 @@ def parse_book_sections(markdown: str) -> BookManifest:
 
     sections, demoted_titles = _collapse_title_sections(sections, book_title)
     front = demoted_titles + front
+
+    chapters, demoted_chapters = _normalize_chapters(chapters)
+    back = demoted_chapters + back
 
     ordered = sections + front + other + chapters + back
     for idx, section in enumerate(ordered):

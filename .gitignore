@@ -5,11 +5,25 @@
 venv/
 .env
 
-# PyInstaller / Inno Setup
+# Node / frontend
+node_modules/
+apps/web/dist/
+
+# Rust / Tauri
+src-tauri/target/
+src-tauri/binaries/*
+!src-tauri/binaries/.gitkeep
+src-tauri/resources/ffmpeg/*
+!src-tauri/resources/ffmpeg/.gitkeep
+
+# PyInstaller
 build/
 dist/
-installer/output/
+release/
 *.exe
+
+# Legacy Inno Setup output
+installer/output/
 
 # OS / editor
 .DS_Store
@@ -17,6 +31,11 @@ Thumbs.db
 desktop.ini
 .idea/
 .vscode/
+.cursor/
+.pytest_cache/
+
+sidecar-test.log
+sidecar-test.err
 
 # Local test outputs
 *.readable.md
