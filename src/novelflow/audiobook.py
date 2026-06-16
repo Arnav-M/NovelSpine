@@ -4,13 +4,12 @@ from __future__ import annotations
 
 import json
 import re
-import shutil
 import threading
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
-from novelflow.audio_merge import merge_audiobook, update_manifest_timestamps
+from novelflow.audio_merge import _probe_duration_ms, merge_audiobook, update_manifest_timestamps
 from novelflow.book_structure import (
     BookManifest,
     BookSection,
@@ -18,9 +17,25 @@ from novelflow.book_structure import (
     apply_default_audiobook_filter,
     apply_section_filter,
     parse_book_sections,
+    reader_lines_for_section,
 )
 from novelflow.convert import ConversionCancelled, _check_cancel
+from novelflow.reader_sidecar import (
+    line_starts_from_sentence_boundaries,
+    line_starts_from_weights,
+    reader_sidecar_path,
+    save_reader_sidecar,
+)
 from novelflow.tts_config import resolve_engine, section_workers
+from novelflow.path_utils import safe_rmtree, safe_unlink
+from novelflow.project_output import (
+    AudiobookBuildSpec,
+    default_audiobook_path,
+    resolve_audiobook_build_path,
+    work_dir_for_build,
+    write_audiobook_source_meta,
+    write_work_dir_fingerprint,
+)
 from novelflow.tts_engines import get_engine
 from novelflow.tts_voices import default_voice
 
@@ -101,24 +116,33 @@ def create_audiobook(
         manifest = apply_default_audiobook_filter(manifest)
 
     if output_path is None:
-        stem = md_path.stem
-        if stem.endswith(".readable"):
-            stem = stem[: -len(".readable")]
-        out = md_path.with_name(f"{stem}.audiobook.{audio_format.lstrip('.')}")
+        base = default_audiobook_path(md_path, audio_format)
     else:
-        out = Path(output_path).resolve()
-        if not out.suffix:
-            out = out.with_suffix(f".{audio_format.lstrip('.')}")
-
-    work_dir = md_path.parent / f".{md_path.stem}_audiobook_work"
-    sections_dir = work_dir / "sections"
-    if not resume and work_dir.exists():
-        shutil.rmtree(work_dir, ignore_errors=True)
-    sections_dir.mkdir(parents=True, exist_ok=True)
+        base = Path(output_path).resolve()
+        if not base.suffix:
+            base = base.with_suffix(f".{audio_format.lstrip('.')}")
 
     enabled = manifest.enabled_sections()
     if not enabled:
         raise ValueError("No enabled sections to synthesize.")
+
+    build_spec = AudiobookBuildSpec(
+        markdown_path=md_path,
+        markdown_text=markdown,
+        engine=resolved_engine,
+        voice=voice,
+        enabled_section_ids=tuple(s.id for s in enabled),
+    )
+    out = resolve_audiobook_build_path(build_spec, audio_format, output_base=base)
+    if out.name != default_audiobook_path(md_path, audio_format).name:
+        log(f"Saving new audiobook as {out.name} (markdown, voice, or sections changed).")
+
+    work_dir = work_dir_for_build(build_spec)
+    sections_dir = work_dir / "sections"
+    if not resume and work_dir.exists():
+        safe_rmtree(work_dir)
+    sections_dir.mkdir(parents=True, exist_ok=True)
+    write_work_dir_fingerprint(work_dir, build_spec)
 
     log(
         f"TTS engine: {resolved_engine} "
@@ -127,7 +151,7 @@ def create_audiobook(
     )
 
     engine_impl = get_engine(engine)
-    section_files: list[tuple[str, Path]] = []
+    section_files: list[tuple[str, str, Path]] = []
     total = len(enabled)
     completed = 0
 
@@ -135,11 +159,16 @@ def create_audiobook(
     # "Chapter 2", … The intro is merged into each chapter's first chunk, so
     # it costs a few extra words on an already-scheduled call — not a new one.
     announcements: dict[str, str] = {}
+    chapter_numbers: dict[str, int] = {}
     chapter_no = 0
     for s in enabled:
         if s.kind == SectionKind.CHAPTER:
             chapter_no += 1
+            chapter_numbers[s.id] = chapter_no
             announcements[s.id] = _chapter_announcement(s, chapter_no)
+
+    reader_sections: dict[str, dict] = {}
+    reader_lock = threading.Lock()
 
     # Weight each section by its text length so a 30-page chapter advances the
     # bar far more than a one-line title — i.e. progress tracks real work.
@@ -159,14 +188,42 @@ def create_audiobook(
             section_frac[order] = max(section_frac.get(order, 0.0), frac)
             _emit_synth_progress()
 
-    def _synthesize(section: BookSection) -> tuple[str, Path, BookSection]:
+    def _store_reader_timings(
+        section: BookSection,
+        part_path: Path,
+        *,
+        word_boundaries: list[dict[str, object]] | None = None,
+    ) -> None:
+        chapter_number = chapter_numbers.get(section.id)
+        lines, weights = reader_lines_for_section(section, chapter_number)
+        duration_ms = _probe_duration_ms(part_path)
+        if word_boundaries:
+            line_start_ms = line_starts_from_sentence_boundaries(
+                lines,
+                word_boundaries,
+                duration_ms,
+            )
+        else:
+            line_start_ms = line_starts_from_weights(lines, weights, duration_ms)
+        with reader_lock:
+            reader_sections[section.id] = {
+                "lines": lines,
+                "line_start_ms": line_start_ms,
+                "line_weights": weights,
+                "duration_ms": duration_ms,
+            }
+
+    def _synthesize(section: BookSection) -> tuple[str, str, Path, BookSection]:
         _check_cancel(cancel_check)
         part_path = sections_dir / f"{section.order:03d}_{section.id}.mp3"
+        for stale in sections_dir.glob(f"{section.order:03d}_{section.id}.part*.mp3"):
+            safe_unlink(stale)
         if part_path.is_file() and part_path.stat().st_size >= _MIN_VALID_SECTION_BYTES:
             _set_section_fraction(section.order, 1.0)
-            return section.title, part_path, section
+            _store_reader_timings(section, part_path)
+            return section.id, section.title, part_path, section
         speech = _speech_with_announcement(section, announcements.get(section.id))
-        engine_impl.synthesize_section(
+        synth = engine_impl.synthesize_section_detailed(
             speech,
             part_path,
             voice=voice,
@@ -174,30 +231,31 @@ def create_audiobook(
             on_progress=lambda frac, o=section.order: _set_section_fraction(o, frac),
         )
         _set_section_fraction(section.order, 1.0)
-        return section.title, part_path, section
+        _store_reader_timings(section, synth.path, word_boundaries=synth.word_boundaries)
+        return section.id, section.title, part_path, section
 
     workers = section_workers(engine)
-    results: dict[int, tuple[str, Path]] = {}
+    results: dict[int, tuple[str, str, Path]] = {}
 
     if workers <= 1:
         for idx, section in enumerate(enabled):
             log(f"Section {idx + 1}/{total}: {section.title} ({section.kind.value})")
-            title, path, _ = _synthesize(section)
-            results[section.order] = (title, path)
+            section_id, title, path, _ = _synthesize(section)
+            results[section.order] = (section_id, title, path)
     else:
         with ThreadPoolExecutor(max_workers=workers) as pool:
             futures = {pool.submit(_synthesize, section): section for section in enabled}
             for future in as_completed(futures):
                 section = futures[future]
-                title, path, _ = future.result()
-                results[section.order] = (title, path)
+                section_id, title, path, _ = future.result()
+                results[section.order] = (section_id, title, path)
                 with progress_lock:
                     completed += 1
                 log(f"Section {completed}/{total}: {section.title} ({section.kind.value})")
 
     for section in enabled:
-        title, path = results[section.order]
-        section_files.append((title, path))
+        section_id, title, path = results[section.order]
+        section_files.append((section_id, title, path))
 
     _check_cancel(cancel_check)
     log("Merging sections with chapter markers…")
@@ -216,18 +274,19 @@ def create_audiobook(
 
     # Pair each chapter marker with its source section MP3 (when kept) so the
     # in-app player can stream chapters directly without decoding the m4b.
-    marker_files = {title: path for title, path in section_files}
+    marker_files = {section_id: path for section_id, _title, path in section_files}
     meta_sidecar = audiobook_path.with_suffix(".chapters.json")
     meta_sidecar.write_text(
         json.dumps(
             [
                 {
+                    "id": m.id or None,
                     "title": m.title,
                     "start_ms": m.start_ms,
                     "end_ms": m.end_ms,
                     "file": (
-                        str(marker_files[m.title])
-                        if keep_sections and m.title in marker_files
+                        str(marker_files[m.id])
+                        if keep_sections and m.id and m.id in marker_files
                         else None
                     ),
                 }
@@ -238,13 +297,17 @@ def create_audiobook(
         encoding="utf-8",
     )
 
+    save_reader_sidecar(audiobook_path, reader_sections)
+    log(f"Reader timings: {reader_sidecar_path(audiobook_path).name}")
+
     if not keep_sections:
-        shutil.rmtree(work_dir, ignore_errors=True)
+        safe_rmtree(work_dir)
     else:
         log(f"Section audio kept in: {sections_dir}")
 
     if on_progress:
         on_progress(100)
+    write_audiobook_source_meta(audiobook_path, build_spec)
     log(f"Audiobook saved: {audiobook_path}")
     log(f"Navigation manifest: {manifest_path}")
     return audiobook_path, manifest

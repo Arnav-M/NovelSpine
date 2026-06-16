@@ -11,6 +11,7 @@ class ConvertJobRequest(BaseModel):
     pdf_path: str
     output_path: str | None = None
     keep_raw: bool = False
+    use_project_folder: bool = False
 
 
 class AudiobookJobRequest(BaseModel):
@@ -23,6 +24,8 @@ class AudiobookJobRequest(BaseModel):
     audio_format: Literal["m4b", "mp3", "m4a"] = "m4b"
     disabled_section_ids: list[str] = Field(default_factory=list)
     chapters_and_title_only: bool = True
+    use_project_folder: bool = False
+    audiobook_only: bool = False
 
 
 class JobCreatedResponse(BaseModel):
@@ -58,6 +61,15 @@ class SectionsResponse(BaseModel):
     author: str | None
     source_markdown: str
     sections: list[SectionResponse]
+
+
+class ChapterTextResponse(BaseModel):
+    title: str
+    lines: list[str]
+    line_weights: list[int] = Field(default_factory=list)
+    line_start_ms: list[int] = Field(default_factory=list)
+    section_duration_ms: int = 0
+    announcement_ms: int = 0
 
 
 class LibraryItemResponse(BaseModel):

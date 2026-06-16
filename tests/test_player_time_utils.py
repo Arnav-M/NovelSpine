@@ -23,15 +23,21 @@ def _seek_book_ms(chapters: list[dict], book_ms: int) -> tuple[int, int]:
             start = int(ch.get("start_ms", 0))
             end = start + int(ch.get("duration_ms", 0))
             is_last = i == len(chapters) - 1
+            dur = int(ch.get("duration_ms", 0))
             if clamped >= start and (clamped < end or is_last):
-                return i, max(0, clamped - start)
+                raw = max(0, clamped - start)
+                offset = min(raw, dur) if is_last and dur > 0 else raw
+                return i, offset
         return len(chapters) - 1, 0
 
     acc = 0
     for i, ch in enumerate(chapters):
         dur = int(ch.get("duration_ms", 0))
         if clamped <= acc + dur or i == len(chapters) - 1:
-            return i, max(0, clamped - acc)
+            raw = max(0, clamped - acc)
+            is_last = i == len(chapters) - 1
+            offset = min(raw, dur) if is_last and dur > 0 else raw
+            return i, offset
         acc += dur
     return 0, 0
 

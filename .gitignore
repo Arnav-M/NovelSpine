@@ -34,6 +34,9 @@ desktop.ini
 .cursor/
 .pytest_cache/
 
+sidecar-test.log
+sidecar-test.err
+
 # Local test outputs
 *.readable.md
 *.raw.md

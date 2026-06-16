@@ -1,16 +1,16 @@
 import { useCallback, useRef, useState } from "react";
 import { startConvert } from "../api/client";
+import { useModalA11y } from "../a11y/useModalA11y";
+import { useLiveRegion } from "../a11y/LiveRegionContext";
 import { isTauri, pickFile, pickFolder, revealInExplorer } from "../bridge/tauri";
 import WorkTabLayout from "../components/WorkTabLayout";
 import type { ProgressState } from "../components/ProgressFooter";
 import type { LogEntry } from "../components/ActivityLog";
-import type { Prefs } from "../api/client";
 import {
   joinOutputPath,
   pathFromDataTransfer,
   resolveDroppedPath,
-  splitOutputPath,
-  suggestedReadableMarkdownOutput,
+  suggestedProjectFolderOutput,
 } from "../lib/files";
 
 interface Props {
@@ -18,7 +18,8 @@ interface Props {
   onSourceChange: (path: string) => void;
   onMarkdownReady: (path: string) => void;
   markdownPath: string;
-  prefs: Prefs;
+  projectFolder: string;
+  onProjectFolderChange: (folder: string) => Promise<void>;
   busy: boolean;
   activeJobId: string | null;
   onLog: (text: string, tone?: LogEntry["tone"]) => void;
@@ -36,6 +37,8 @@ export default function DocumentTab({
   onSourceChange,
   onMarkdownReady,
   markdownPath,
+  projectFolder,
+  onProjectFolderChange,
   busy,
   activeJobId,
   onLog,
@@ -51,15 +54,27 @@ export default function DocumentTab({
   const [dragOver, setDragOver] = useState(false);
   const [staging, setStaging] = useState(false);
   const [advancedOpen, setAdvancedOpen] = useState(false);
-  const [outputPath, setOutputPath] = useState("");
-  const [outputFolder, setOutputFolder] = useState("");
   const [outputFileName, setOutputFileName] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
   const unsubscribeRef = useRef<(() => void) | null>(null);
+  const advancedDialogRef = useRef<HTMLDivElement>(null);
+  const advancedTriggerRef = useRef<HTMLButtonElement>(null);
+  const { announce } = useLiveRegion();
+
+  useModalA11y(advancedDialogRef, {
+    open: advancedOpen,
+    onClose: () => setAdvancedOpen(false),
+    returnFocusRef: advancedTriggerRef,
+  });
 
   const isPdf = sourcePath.toLowerCase().endsWith(".pdf");
   const isMarkdown = sourcePath.toLowerCase().endsWith(".md");
   const outputReady = Boolean(markdownPath);
+  const bookOutputFolder = sourcePath ? suggestedProjectFolderOutput(sourcePath).folder : "";
+  const customOutputPath =
+    outputFileName.trim() && bookOutputFolder
+      ? joinOutputPath(bookOutputFolder, outputFileName.trim())
+      : "";
 
   const applySource = useCallback(
     async (path: string) => {
@@ -130,68 +145,51 @@ export default function DocumentTab({
       const { job_id } = await startConvert({
         pdf_path: sourcePath,
         keep_raw: keepRaw,
-        output_path: outputPath.trim() || undefined,
+        output_path: customOutputPath || undefined,
+        use_project_folder: !customOutputPath,
       });
       unsubscribeRef.current?.();
       unsubscribeRef.current = startJobTracking(job_id, "Convert PDF", "Extracting text…");
+      announce("PDF conversion started.", "assertive");
     } catch (err) {
       onLog(err instanceof Error ? err.message : String(err), "danger");
       setProgress((prev) => ({ ...prev, busy: false, tone: "danger", message: "Conversion failed." }));
     }
-  }, [busy, isPdf, keepRaw, onLog, outputPath, setProgress, sourcePath, startJobTracking]);
+  }, [announce, busy, customOutputPath, isPdf, keepRaw, onLog, setProgress, sourcePath, startJobTracking]);
 
   const openAdvanced = useCallback(() => {
-    if (outputPath.trim()) {
-      const { folder, fileName } = splitOutputPath(outputPath);
-      setOutputFolder(folder);
-      setOutputFileName(fileName);
+    if (outputFileName.trim()) {
+      setOutputFileName(outputFileName.trim());
     } else if (sourcePath && isPdf) {
-      const suggested = suggestedReadableMarkdownOutput(sourcePath);
-      setOutputFolder(suggested.folder);
-      setOutputFileName(suggested.fileName);
+      setOutputFileName(suggestedProjectFolderOutput(sourcePath).fileName);
     } else {
-      setOutputFolder("");
       setOutputFileName("");
     }
     setAdvancedOpen(true);
-  }, [isPdf, outputPath, sourcePath]);
-
-  const chooseOutputFolder = useCallback(async () => {
-    const defaultPath =
-      outputFolder.trim() || (sourcePath ? suggestedReadableMarkdownOutput(sourcePath).folder : "");
-    setAdvancedOpen(false);
-    try {
-      const folder = await pickFolder(defaultPath || undefined);
-      if (folder) setOutputFolder(folder);
-    } catch (err) {
-      onLog(err instanceof Error ? err.message : String(err), "danger");
-    } finally {
-      setAdvancedOpen(true);
-    }
-  }, [onLog, outputFolder, sourcePath]);
-
-  const saveAdvancedOutput = useCallback(() => {
-    const fallbackFolder = sourcePath ? suggestedReadableMarkdownOutput(sourcePath).folder : "";
-    setOutputPath(joinOutputPath(outputFolder, outputFileName, fallbackFolder));
-    setAdvancedOpen(false);
-  }, [outputFileName, outputFolder, sourcePath]);
+  }, [isPdf, outputFileName, sourcePath]);
 
   const clearAdvancedOutput = useCallback(() => {
-    setOutputFolder("");
     setOutputFileName("");
-    setOutputPath("");
     setAdvancedOpen(false);
   }, []);
 
-  const openFolder = useCallback(async () => {
-    const path = markdownPath || sourcePath;
-    if (!path) return;
-    if (isTauri()) {
-      await revealInExplorer(path);
-    } else {
-      onLog("Open folder is available in the desktop app.", "muted");
+  const changeProjectFolder = useCallback(async () => {
+    try {
+      const folder = await pickFolder(projectFolder || undefined);
+      if (folder) await onProjectFolderChange(folder);
+    } catch (err) {
+      onLog(err instanceof Error ? err.message : String(err), "danger");
     }
-  }, [markdownPath, onLog, sourcePath]);
+  }, [onLog, onProjectFolderChange, projectFolder]);
+
+  const revealProjectFolder = useCallback(async () => {
+    if (!projectFolder) return;
+    try {
+      await revealInExplorer(projectFolder);
+    } catch (err) {
+      onLog(err instanceof Error ? err.message : String(err), "danger");
+    }
+  }, [onLog, projectFolder]);
 
   return (
     <WorkTabLayout
@@ -208,6 +206,43 @@ export default function DocumentTab({
         </p>
 
         <div className="card">
+          <div className="form-row project-folder-row">
+            <label htmlFor="doc-library-folder">Library folder</label>
+            <div className="form-row-controls">
+              <input
+                id="doc-library-folder"
+                type="text"
+                className="library-path-input"
+                readOnly
+                value={projectFolder}
+                placeholder="Parent folder for your books — set when you pick a document"
+                aria-describedby={projectFolder ? undefined : "doc-library-hint"}
+              />
+              <button
+                type="button"
+                className="btn btn-ghost"
+                disabled={!projectFolder}
+                aria-label="Reveal library folder in Explorer"
+                onClick={() => void revealProjectFolder()}
+              >
+                Reveal
+              </button>
+              <button
+                type="button"
+                className="btn"
+                aria-label="Change library folder"
+                onClick={() => void changeProjectFolder()}
+              >
+                Change…
+              </button>
+            </div>
+            {!projectFolder && (
+              <p id="doc-library-hint" className="estimate muted">
+                Choose a document to set the library folder automatically, or use Change.
+              </p>
+            )}
+          </div>
+
           <input
             ref={fileInputRef}
             type="file"
@@ -219,6 +254,13 @@ export default function DocumentTab({
             className={`dropzone ${dragOver ? "dragover" : ""} ${!sourcePath && !staging ? "dropzone-clickable" : ""}`}
             role={!sourcePath && !staging ? "button" : undefined}
             tabIndex={!sourcePath && !staging ? 0 : undefined}
+            aria-label={
+              staging
+                ? "Uploading file"
+                : sourcePath
+                  ? `Selected file: ${sourcePath.split(/[/\\]/).pop()}`
+                  : "Drop PDF or markdown file, or press Enter to browse"
+            }
             onClick={() => {
               if (!sourcePath && !staging) void chooseFile();
             }}
@@ -243,7 +285,12 @@ export default function DocumentTab({
                   <strong>{sourcePath.split(/[/\\]/).pop()}</strong>
                   <span>{sourcePath}</span>
                 </div>
-                <button type="button" className="btn btn-ghost" onClick={() => onSourceChange("")}>
+                <button
+                  type="button"
+                  className="btn btn-ghost"
+                  aria-label="Clear selected file"
+                  onClick={() => onSourceChange("")}
+                >
                   Clear
                 </button>
               </div>
@@ -265,11 +312,8 @@ export default function DocumentTab({
             >
               Convert to markdown
             </button>
-            <button type="button" className="btn btn-ghost" onClick={openAdvanced}>
+            <button type="button" className="btn btn-ghost" disabled={!isPdf} ref={advancedTriggerRef} onClick={openAdvanced} aria-label="Advanced markdown output options">
               Advanced…
-            </button>
-            <button type="button" className="btn btn-ghost" disabled={!outputReady && !sourcePath} onClick={() => void openFolder()}>
-              Open folder
             </button>
           </div>
 
@@ -281,33 +325,28 @@ export default function DocumentTab({
           {isMarkdown && (
             <p className="estimate">Markdown loaded — open the Audiobook tab to create audio.</p>
           )}
+          {outputReady && (
+            <p className="estimate muted">Markdown: {markdownPath.split(/[/\\]/).pop()}</p>
+          )}
           {activeJobId && busy && <p className="estimate">Conversion in progress…</p>}
         </div>
       </div>
 
       {advancedOpen && (
         <div className="modal-backdrop" role="presentation" onClick={() => setAdvancedOpen(false)}>
-          <div className="modal modal-wide" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
-            <h2>Advanced output</h2>
+          <div
+            ref={advancedDialogRef}
+            className="modal modal-wide"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="advanced-output-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 id="advanced-output-title">Markdown file name</h2>
             <p className="section-subtitle">
-              Choose where to save the readable markdown. Defaults match the PDF name and folder.
+              Output stays in the book&apos;s subfolder under the library folder. Override the readable
+              markdown file name only.
             </p>
-
-            <div className="form-row">
-              <label htmlFor="adv-output-folder">Output folder</label>
-              <div className="form-row-controls">
-                <input
-                  id="adv-output-folder"
-                  type="text"
-                  value={outputFolder}
-                  onChange={(e) => setOutputFolder(e.target.value)}
-                  placeholder="Same folder as the PDF"
-                />
-                <button type="button" className="btn" onClick={() => void chooseOutputFolder()}>
-                  Browse…
-                </button>
-              </div>
-            </div>
 
             <div className="form-row">
               <label htmlFor="adv-output-name">File name</label>
@@ -316,18 +355,13 @@ export default function DocumentTab({
                 type="text"
                 value={outputFileName}
                 onChange={(e) => setOutputFileName(e.target.value)}
-                placeholder="book.readable.md"
+                placeholder="Book.readable.md"
               />
             </div>
 
-            {outputFileName.trim() && (
+            {outputFileName.trim() && bookOutputFolder && (
               <p className="estimate">
-                Will save to:{" "}
-                {joinOutputPath(
-                  outputFolder,
-                  outputFileName,
-                  sourcePath ? suggestedReadableMarkdownOutput(sourcePath).folder : "",
-                )}
+                Will save to: {joinOutputPath(bookOutputFolder, outputFileName.trim())}
               </p>
             )}
 
@@ -336,10 +370,7 @@ export default function DocumentTab({
                 Use default
               </button>
               <button type="button" className="btn btn-ghost" onClick={() => setAdvancedOpen(false)}>
-                Cancel
-              </button>
-              <button type="button" className="btn btn-accent" onClick={saveAdvancedOutput}>
-                Save
+                Done
               </button>
             </div>
           </div>

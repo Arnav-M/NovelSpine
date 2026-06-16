@@ -191,6 +191,8 @@ export default function AudiobookTab({
         audio_format: format,
         disabled_section_ids: disabledIds,
         chapters_and_title_only: preset === "Title + chapters",
+        use_project_folder: true,
+        audiobook_only: Boolean(prefs.audiobook_only_cleanup),
       });
       startJobTracking(job_id, "Create audiobook", "Synthesizing audio…");
     } catch (err) {
@@ -206,6 +208,7 @@ export default function AudiobookTab({
     onLog,
     onPrefsChange,
     preset,
+    prefs.audiobook_only_cleanup,
     setProgress,
     sourcePath,
     startJobTracking,
@@ -214,8 +217,12 @@ export default function AudiobookTab({
 
   const openAudiobook = useCallback(async () => {
     if (!lastAudiobook) return;
-    await openPath(lastAudiobook);
-  }, [lastAudiobook]);
+    try {
+      await openPath(lastAudiobook);
+    } catch (err) {
+      onLog(err instanceof Error ? err.message : String(err), "danger");
+    }
+  }, [lastAudiobook, onLog]);
 
   const playInApp = useCallback(async () => {
     if (!lastAudiobook) return;
@@ -259,7 +266,13 @@ export default function AudiobookTab({
                   </option>
                 ))}
               </select>
-              <button type="button" className="btn" disabled={!voiceId || previewing} onClick={() => void preview()}>
+              <button
+                type="button"
+                className="btn"
+                disabled={!voiceId || previewing}
+                aria-label="Preview selected voice"
+                onClick={() => void preview()}
+              >
                 ▶ Preview
               </button>
             </div>
@@ -299,6 +312,7 @@ export default function AudiobookTab({
                 type="button"
                 className="btn btn-ghost"
                 disabled={!sections.length}
+                aria-label="Select audiobook sections"
                 onClick={() => setPickerOpen(true)}
               >
                 Select sections…
@@ -310,7 +324,7 @@ export default function AudiobookTab({
             ) : !sections.length ? (
               <p className="audiobook-estimate-empty">Loading sections…</p>
             ) : (
-              <div className="audiobook-estimate-card">
+              <div className="audiobook-estimate-card" aria-live="polite" aria-atomic="true">
                 {stats.words > 0 ? (
                   <p className="audiobook-estimate-line">{estimateLine}</p>
                 ) : (
@@ -325,6 +339,13 @@ export default function AudiobookTab({
               type="button"
               className="btn btn-accent"
               disabled={!(sourcePath || mdPath) || busy}
+              aria-label={
+                !(sourcePath || mdPath)
+                  ? "Create audiobook, load a document first"
+                  : busy
+                    ? "Create audiobook, job in progress"
+                    : "Create audiobook"
+              }
               onClick={() => void createAudiobook()}
             >
               Create audiobook
@@ -337,6 +358,15 @@ export default function AudiobookTab({
             </button>
           </div>
           {activeJobId && busy && <p className="estimate">Audiobook job running…</p>}
+          {Boolean(prefs.audiobook_only_cleanup) && (
+            <p className="estimate muted">
+              Intermediate files will be removed when done — only the audiobook, chapter index, and cover are kept.
+            </p>
+          )}
+          <p className="estimate muted">
+            Output goes in a subfolder under the library folder (e.g. MyBook/MyBook.audiobook.m4b).
+            Change the library folder on the Document tab.
+          </p>
         </div>
       </div>
 

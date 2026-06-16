@@ -109,6 +109,39 @@ def normalize_line_key(text: str) -> str:
     return re.sub(r"\s+", " ", text.strip())
 
 
+def normalize_heading_line(text: str) -> str:
+    """Strip markdown emphasis and normalize apostrophes for heading checks."""
+    cleaned = text.strip().strip("*_'\"")
+    cleaned = cleaned.replace("\u2019", "'").replace("\u2018", "'")
+    return cleaned.strip()
+
+
+def is_back_matter_heading(line: str) -> bool:
+    normalized = normalize_heading_line(line)
+    if not normalized:
+        return False
+    if normalized in BACK_MATTER:
+        return True
+    return bool(GENERIC_HEADING_RE.match(normalized))
+
+
+def following_content_lines(lines: list[str], idx: int, max_lines: int = 6) -> list[str]:
+    following: list[str] = []
+    for j in range(idx + 1, min(idx + 1 + max_lines, len(lines))):
+        next_line = lines[j].strip()
+        if next_line:
+            following.append(next_line)
+    return following
+
+
+def is_chapter_back_matter_stub(lines: list[str], idx: int) -> bool:
+    """True when a chapter heading only introduces back matter (e.g. Author's Note)."""
+    following = following_content_lines(lines, idx, max_lines=3)
+    if not following:
+        return False
+    return is_back_matter_heading(following[0])
+
+
 def detect_book_identity(lines: list[str]) -> tuple[str | None, str | None]:
     title = None
     author = None
@@ -136,16 +169,14 @@ def find_body_start(lines: list[str]) -> int:
         stripped = line.strip()
         if not stripped or not CHAPTER_RE.match(stripped):
             continue
-        following: list[str] = []
-        for j in range(i + 1, min(i + 6, total)):
-            next_line = lines[j].strip()
-            if next_line:
-                following.append(next_line)
+        following = following_content_lines(lines, i, max_lines=5)
         if not following:
             continue
-        if any(CHAPTER_RE.match(item) for item in following):
+        if CHAPTER_RE.match(following[0]):
             continue
-        if following[0] in BACK_MATTER or GENERIC_HEADING_RE.match(following[0]):
+        if is_chapter_back_matter_stub(lines, i):
+            continue
+        if is_back_matter_heading(following[0]):
             continue
         return i
     return 0
@@ -318,7 +349,7 @@ def refine_markdown(text: str, *, italic_hints: set[str] | None = None) -> str:
     body_start = find_body_start(lines)
 
     def is_heading(line: str, in_front_matter: bool) -> bool:
-        if GENERIC_HEADING_RE.match(line):
+        if is_back_matter_heading(line):
             return True
         if title and line == title:
             return True
@@ -333,6 +364,7 @@ def refine_markdown(text: str, *, italic_hints: set[str] | None = None) -> str:
     scene_slots = 0
     story_chapters: list[str] = []
     story_start_idx: int | None = None
+    skip_heading_keys: set[str] = set()
 
     def flush() -> None:
         if block:
@@ -343,6 +375,12 @@ def refine_markdown(text: str, *, italic_hints: set[str] | None = None) -> str:
         stripped = raw.strip()
         in_front_matter = idx < body_start
 
+        if stripped:
+            heading_key = normalize_heading_line(stripped)
+            if heading_key in skip_heading_keys:
+                skip_heading_keys.discard(heading_key)
+                continue
+
         if not stripped:
             if block and ends_sentence(block[-1]):
                 flush()
@@ -350,7 +388,13 @@ def refine_markdown(text: str, *, italic_hints: set[str] | None = None) -> str:
 
         if CHAPTER_RE.match(stripped):
             flush()
-            if in_front_matter:
+            if is_chapter_back_matter_stub(lines, idx):
+                following = following_content_lines(lines, idx, max_lines=3)
+                matter_title = normalize_heading_line(following[0])
+                paragraphs.append(f"## {matter_title}")
+                skip_heading_keys.add(matter_title)
+                scene_slots = 0
+            elif in_front_matter:
                 paragraphs.append(f"**{stripped}**")
                 scene_slots = 0
             else:

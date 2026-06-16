@@ -1,184 +1,366 @@
-import { useEffect, useRef, useState } from "react";
-import { usePlayer } from "../player/PlayerContext";
-import BookTimeline from "../player/BookTimeline";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
+import KeyboardShortcutsModal from "../components/KeyboardShortcutsModal";
+import { baseName } from "../lib/files";
 import ChapterPanel from "../player/ChapterPanel";
-import SeekBar from "../player/SeekBar";
-import TransportControls from "../player/TransportControls";
-import { chapterLabel, formatTime } from "../player/timeUtils";
-import { SPEED_OPTIONS } from "../lib/files";
+import BookReaderPanel from "../player/BookReaderPanel";
+import PanelResizeHandle from "../player/PanelResizeHandle";
+import PlayerLibraryRow from "../player/PlayerLibraryRow";
+import { usePlayerLibrary, usePlayerPlayback } from "../player/PlayerContext";
+import PlayerStage from "../player/PlayerStage";
+import { usePlayerColumnWidths } from "../player/usePlayerColumnWidths";
 
-export default function PlayerTab() {
-  const p = usePlayer();
-  const comboRef = useRef<HTMLSelectElement>(null);
-  const [chaptersOpen, setChaptersOpen] = useState(false);
+const DESKTOP_BREAKPOINT = "(min-width: 900px)";
+
+function useMediaQuery(query: string): boolean {
+  const [matches, setMatches] = useState(() =>
+    typeof window !== "undefined" ? window.matchMedia(query).matches : true,
+  );
+
+  useEffect(() => {
+    const media = window.matchMedia(query);
+    const onChange = () => setMatches(media.matches);
+    onChange();
+    media.addEventListener("change", onChange);
+    return () => media.removeEventListener("change", onChange);
+  }, [query]);
+
+  return matches;
+}
+
+function isTypingTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  if (target.isContentEditable) return true;
+  const tag = target.tagName;
+  if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return true;
+  return Boolean(target.closest(".chapter-sidebar, .reader-sidebar, [role='dialog']"));
+}
+
+interface PlayerTabProps {
+  onOpenDocument?: () => void;
+}
+
+function PlayerChaptersOverlay() {
+  const { chapters, activeChapter, seekChapter } = usePlayerPlayback();
+
+  if (!chapters.length) return null;
+
+  return (
+    <ChapterPanel
+      chapters={chapters}
+      activeChapter={activeChapter}
+      open
+      onSelect={(i) => void seekChapter(i)}
+    />
+  );
+}
+
+function PlayerKeyboardHandler({ onOpenShortcuts }: { onOpenShortcuts: () => void }) {
+  const { togglePlay, skipSeconds, seekChapter, activeChapter } = usePlayerPlayback();
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (
-        e.code !== "Space" ||
-        e.target instanceof HTMLInputElement ||
-        e.target instanceof HTMLTextAreaElement ||
-        e.target instanceof HTMLSelectElement
-      ) {
+      if (isTypingTarget(e.target)) return;
+
+      if (e.key === "?" && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        e.preventDefault();
+        onOpenShortcuts();
         return;
       }
-      e.preventDefault();
-      void p.togglePlay();
+
+      if (e.code === "Space") {
+        e.preventDefault();
+        void togglePlay();
+        return;
+      }
+
+      if (e.key === "ArrowLeft" && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
+        e.preventDefault();
+        skipSeconds(-10);
+        return;
+      }
+
+      if (e.key === "ArrowRight" && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
+        e.preventDefault();
+        skipSeconds(10);
+        return;
+      }
+
+      if (e.key === "[") {
+        e.preventDefault();
+        void seekChapter(activeChapter - 1);
+        return;
+      }
+
+      if (e.key === "]") {
+        e.preventDefault();
+        void seekChapter(activeChapter + 1);
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [p]);
+  }, [activeChapter, onOpenShortcuts, seekChapter, skipSeconds, togglePlay]);
 
-  const selectedPath = p.selected?.audio_path ?? "";
+  return null;
+}
+
+function PlayerMobileFooter({
+  chaptersOpen,
+  chapterCount,
+  onToggleChapters,
+}: {
+  chaptersOpen: boolean;
+  chapterCount: number;
+  onToggleChapters: () => void;
+}) {
+  return (
+    <div className="player-footer">
+      <button
+        type="button"
+        className={`btn btn-ghost ${chaptersOpen ? "active" : ""}`}
+        disabled={!chapterCount}
+        aria-label={chaptersOpen ? "Hide chapter list" : "Show chapter list"}
+        aria-expanded={chaptersOpen}
+        onClick={onToggleChapters}
+      >
+        ☰ Chapters
+      </button>
+    </div>
+  );
+}
+
+export default function PlayerTab({ onOpenDocument }: PlayerTabProps) {
+  const {
+    projectFolder,
+    chapterCount,
+    chaptersSidebarOpen,
+    readerSidebarOpen,
+    chaptersOpenMobile,
+    setChaptersOpenMobile,
+    toggleChaptersSidebar,
+    toggleReaderSidebar,
+    toggleChaptersMobile,
+  } = usePlayerLibrary();
+  const isWide = useMediaQuery(DESKTOP_BREAKPOINT);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
+
+  const chaptersVisible = isWide || chaptersOpenMobile;
+  const libraryLabel = projectFolder ? baseName(projectFolder) : "";
+
+  useEffect(() => {
+    if (isWide) setChaptersOpenMobile(false);
+  }, [isWide, setChaptersOpenMobile]);
 
   return (
-    <div className={`tab-panel player-tab ${chaptersOpen ? "chapters-open" : ""}`}>
-      <div className="player-library-bar">
-        <div className="player-library-path-row">
-          <input
-            type="text"
-            className="library-path-input"
-            value={p.libraryDraft}
-            onChange={(e) => p.setLibraryDraft(e.target.value)}
-            onBlur={() => void p.applyLibraryPath()}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") void p.applyLibraryPath();
-            }}
-            placeholder="Library folder path…"
-          />
-          <button type="button" className="btn" onClick={() => void p.chooseLibrary()}>
-            Browse…
-          </button>
-          <button type="button" className="btn btn-ghost" onClick={() => void p.refreshLibrary()}>
-            Refresh
-          </button>
-        </div>
-        <div className="player-library-select-row">
-          <select
-            ref={comboRef}
-            className="library-combo"
-            value={selectedPath}
-            onChange={(e) => {
-              const item = p.items.find((i) => i.audio_path === e.target.value);
-              if (item) void p.loadItem(item);
-            }}
-          >
-            <option value="">Select audiobook…</option>
-            {p.items.map((item) => (
-              <option key={item.audio_path} value={item.audio_path}>
-                {item.label}
-              </option>
-            ))}
-          </select>
-          <button type="button" className="btn" disabled={!p.selected} onClick={() => void p.openAudiobook()}>
-            Open
-          </button>
-        </div>
+    <div
+      className={`tab-panel player-tab ${chaptersVisible ? "chapters-open" : ""} ${isWide ? "player-wide" : "player-narrow"} ${chaptersSidebarOpen ? "chapters-sidebar-open" : "chapters-sidebar-collapsed"} ${readerSidebarOpen ? "reader-sidebar-open" : "reader-sidebar-collapsed"}`}
+    >
+      <PlayerKeyboardHandler onOpenShortcuts={() => setShortcutsOpen(true)} />
+
+      <div className="player-library-header-row">
+        {projectFolder ? (
+          <h2 className="player-library-header">
+            <span className="player-library-header-label">Library</span>
+            <span className="player-library-header-name">{libraryLabel}</span>
+          </h2>
+        ) : (
+          <p id="player-library-hint" className="player-library-header player-library-header-hint">
+            {onOpenDocument ? (
+              <>
+                Set the library folder on the{" "}
+                <button type="button" className="btn-link" onClick={onOpenDocument}>
+                  Document tab
+                </button>{" "}
+                to scan for audiobooks.
+              </>
+            ) : (
+              "Set the library folder on the Document tab to scan for audiobooks."
+            )}
+          </p>
+        )}
+        <button
+          type="button"
+          className="btn btn-ghost player-shortcuts-btn"
+          aria-label="Keyboard shortcuts help"
+          onClick={() => setShortcutsOpen(true)}
+        >
+          ? Shortcuts
+        </button>
       </div>
 
-      <div className={`player-main-row ${chaptersOpen ? "chapters-open" : ""}`}>
-        <ChapterPanel
-          chapters={p.chapters}
-          activeChapter={p.activeChapter}
-          open={chaptersOpen}
-          onSelect={(i) => void p.seekChapter(i)}
-        />
+      <PlayerMainRow
+        isWide={isWide}
+        chapterCount={chapterCount}
+        chaptersSidebarOpen={chaptersSidebarOpen}
+        readerSidebarOpen={readerSidebarOpen}
+        chaptersOpenMobile={chaptersOpenMobile}
+        showChaptersToggle={!isWide}
+        onToggleChaptersSidebar={toggleChaptersSidebar}
+        onToggleReaderSidebar={toggleReaderSidebar}
+        onToggleChaptersMobile={toggleChaptersMobile}
+      />
 
-        <div className="player-stage">
-          {p.coverUrl ? (
-            <img src={p.coverUrl} alt="" className="player-cover-large" />
-          ) : (
-            <div className="player-cover-large placeholder">🎧</div>
-          )}
+      <KeyboardShortcutsModal open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
+    </div>
+  );
+}
 
-          <h2 className="player-chapter-title">
-            {p.chapters.length
-              ? chapterLabel(p.activeChapter, p.chapters.length)
-              : "No chapter"}
-          </h2>
-          <p className="player-book-subtitle">{p.subtitle}</p>
-          {p.chapterTitle && p.chapters.length > 0 && (
-            <p className="player-chapter-name">{p.chapterTitle}</p>
-          )}
+function PlayerMainRow({
+  isWide,
+  chapterCount,
+  chaptersSidebarOpen,
+  readerSidebarOpen,
+  chaptersOpenMobile,
+  showChaptersToggle,
+  onToggleChaptersSidebar,
+  onToggleReaderSidebar,
+  onToggleChaptersMobile,
+}: {
+  isWide: boolean;
+  chapterCount: number;
+  chaptersSidebarOpen: boolean;
+  readerSidebarOpen: boolean;
+  chaptersOpenMobile: boolean;
+  showChaptersToggle: boolean;
+  onToggleChaptersSidebar: () => void;
+  onToggleReaderSidebar: () => void;
+  onToggleChaptersMobile: () => void;
+}) {
+  const { readerMarkdownPath, selected } = usePlayerLibrary();
+  const { chapters, activeChapter, chapterTitle, chapterMs, chapterDurationMs, speed, seekChapter } =
+    usePlayerPlayback();
+  const chaptersVisible = isWide || chaptersOpenMobile;
+  const gridRef = useRef<HTMLDivElement>(null);
+  const { widths, resizing, beginResize, minCenterWidth } = usePlayerColumnWidths({
+    gridRef,
+    chaptersSidebarOpen,
+    readerSidebarOpen,
+  });
+  const columnStyle = {
+    "--player-chapters-width": `${widths.chapters}px`,
+    "--player-reader-width": `${widths.reader}px`,
+    "--player-center-min-width": `${minCenterWidth}px`,
+  } as CSSProperties;
+  const showChapterResize = chaptersSidebarOpen;
+  const showReaderResize = readerSidebarOpen;
+  const sidecarChapter = chapters[activeChapter];
 
-          {p.speedStatus && <p className="player-speed-status">{p.speedStatus}</p>}
+  if (isWide) {
+    const gridClass = ["player-main-grid", resizing ? "player-main-grid--resizing" : ""]
+      .filter(Boolean)
+      .join(" ");
 
-          <div className="player-controls-center">
-            <div className="player-chapter-seek">
-              <span className="time-label">{formatTime(p.chapterMs)}</span>
-              <SeekBar
-                value={p.chapterMs}
-                max={p.chapterDurationMs || 1}
-                disabled={!p.loaded}
-                onChange={(ms) => void p.seekChapter(p.activeChapter, ms)}
-              />
-              <span className="time-label">{formatTime(p.chapterDurationMs)}</span>
-            </div>
-
-            <TransportControls
-              playing={p.playing}
-              disabled={!p.loaded}
-              onToggle={() => void p.togglePlay()}
-              onPrev={() => void p.seekChapter(p.activeChapter - 1)}
-              onNext={() => void p.seekChapter(p.activeChapter + 1)}
-              onSkipBack={() => p.skipSeconds(-10)}
-              onSkipForward={() => p.skipSeconds(10)}
-              canPrev={p.activeChapter > 0}
-              canNext={p.activeChapter < p.chapters.length - 1}
+    return (
+      <div ref={gridRef} className={gridClass} style={columnStyle}>
+        <div className="player-grid-header-row">
+          <div className="player-grid-chapters-header">
+            <ChapterPanel
+              part="header"
+              chapters={chapters}
+              activeChapter={activeChapter}
+              open
+              collapsed={!chaptersSidebarOpen}
+              onToggleCollapse={onToggleChaptersSidebar}
+              onSelect={(i) => void seekChapter(i)}
             />
           </div>
 
-          <div className="player-volume-speed">
-            <div className="volume-control-spotify">
-              <span className="volume-icon" aria-hidden="true">
-                🔈
-              </span>
-              <SeekBar
-                className="volume-bar"
-                value={Math.round(p.volume * 100)}
-                max={100}
-                disabled={!p.loaded}
-                onChange={(v) => p.setVolume(v)}
-              />
+          <div className="player-grid-center-header">
+            <div className="player-library-row">
+              <PlayerLibraryRow />
             </div>
-            <label className="player-speed-label">
-              Speed
-              <select
-                className="player-speed-select"
-                value={p.speed}
-                onChange={(e) => void p.setSpeed(Number(e.target.value) as (typeof SPEED_OPTIONS)[number])}
-              >
-                {SPEED_OPTIONS.map((v) => (
-                  <option key={v} value={v}>
-                    {v}×
-                  </option>
-                ))}
-              </select>
-            </label>
           </div>
 
-          <BookTimeline
-            chapters={p.chapters}
-            currentMs={p.currentMs}
-            activeChapter={p.activeChapter}
-            disabled={!p.loaded}
-            onSeek={(ms) => void p.seekBook(ms)}
-          />
+          <div className="player-grid-reader-header">
+            <BookReaderPanel
+              part="header"
+              markdownPath={readerMarkdownPath}
+              audioPath={selected?.audio_path ?? null}
+              chapterId={sidecarChapter?.id ?? null}
+              activeChapter={activeChapter}
+              chapterTitle={chapterTitle}
+              chapterMs={chapterMs}
+              chapterDurationMs={chapterDurationMs}
+              playbackSpeed={speed}
+              collapsed={!readerSidebarOpen}
+              onToggleCollapse={onToggleReaderSidebar}
+            />
+          </div>
+        </div>
+
+        <div className="player-grid-body-row">
+          {chaptersSidebarOpen && (
+            <div className="player-grid-chapters-body">
+              <ChapterPanel
+                part="body"
+                chapters={chapters}
+                activeChapter={activeChapter}
+                open
+                onSelect={(i) => void seekChapter(i)}
+              />
+            </div>
+          )}
+
+          {showChapterResize && (
+            <PanelResizeHandle
+              className="player-grid-resize player-grid-resize--chapters"
+              label="Resize chapters panel"
+              active={resizing === "chapters"}
+              onDragStart={(clientX) => beginResize("chapters", clientX)}
+            />
+          )}
+
+          <div className="player-grid-center-body">
+            <PlayerStage />
+          </div>
+
+          {showReaderResize && (
+            <PanelResizeHandle
+              className="player-grid-resize player-grid-resize--reader"
+              label="Resize reading panel and player width"
+              active={resizing === "reader"}
+              onDragStart={(clientX) => beginResize("reader", clientX)}
+            />
+          )}
+
+          {readerSidebarOpen && (
+            <div className="player-grid-reader-body">
+              <BookReaderPanel
+                part="body"
+                markdownPath={readerMarkdownPath}
+                audioPath={selected?.audio_path ?? null}
+                chapterId={sidecarChapter?.id ?? null}
+                activeChapter={activeChapter}
+                chapterTitle={chapterTitle}
+                chapterMs={chapterMs}
+                chapterDurationMs={chapterDurationMs}
+                playbackSpeed={speed}
+              />
+            </div>
+          )}
         </div>
       </div>
+    );
+  }
 
-      <div className="player-footer">
-        <button
-          type="button"
-          className={`btn btn-ghost ${chaptersOpen ? "active" : ""}`}
-          disabled={!p.chapters.length}
-          onClick={() => setChaptersOpen((v) => !v)}
-        >
-          ☰ Chapters
-        </button>
-        <button type="button" className="btn btn-ghost" disabled={!p.selected} onClick={() => void p.openAudiobook()}>
-          ↗ Open externally
-        </button>
+  return (
+    <div
+      className={`player-main-row ${chaptersVisible ? "chapters-open" : ""}${resizing ? " player-main-row--resizing" : ""}`}
+      style={columnStyle}
+    >
+      {chaptersVisible && <PlayerChaptersOverlay />}
+
+      <div className="player-content">
+        <div className="player-library-row">
+          <PlayerLibraryRow />
+        </div>
+        <PlayerStage />
+        {showChaptersToggle && (
+          <PlayerMobileFooter
+            chaptersOpen={chaptersOpenMobile}
+            chapterCount={chapterCount}
+            onToggleChapters={onToggleChaptersMobile}
+          />
+        )}
       </div>
     </div>
   );

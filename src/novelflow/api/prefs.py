@@ -16,6 +16,9 @@ _DEFAULT_PREFS: dict = {
     "default_engine": "edge",
     "default_audio_format": "m4b",
     "audiobook_library_dir": "",
+    "project_folder": "",
+    "use_project_folder": True,
+    "audiobook_only_cleanup": False,
     "mini_player_collapsed": False,
     "audiobook_covers": {},
 }
@@ -35,6 +38,10 @@ def load_prefs() -> dict:
         return dict(_DEFAULT_PREFS)
     merged = dict(_DEFAULT_PREFS)
     merged.update(data)
+    if not str(merged.get("project_folder", "")).strip():
+        legacy = str(merged.get("audiobook_library_dir", "")).strip()
+        if legacy:
+            merged["project_folder"] = legacy
     return merged
 
 

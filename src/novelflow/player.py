@@ -20,6 +20,7 @@ class Chapter:
     duration_ms: int
     file: Path | None
     start_ms: int = 0
+    id: str = ""
 
 
 def _probe_duration_ms(path: Path) -> int:
@@ -41,6 +42,7 @@ def _probe_duration_ms(path: Path) -> int:
 
 
 AUDIOBOOK_EXTENSIONS = (".m4b", ".mp3", ".m4a")
+_MIN_AUDIOBOOK_BYTES = 1024
 
 
 def _chapters_from_sidecar(sidecar: Path) -> list[Chapter]:
@@ -55,49 +57,104 @@ def _chapters_from_sidecar(sidecar: Path) -> list[Chapter]:
         if file_path is not None and not file_path.is_file():
             file_path = None
         duration = int(entry.get("end_ms", 0)) - int(entry.get("start_ms", 0))
+        if duration <= 0:
+            duration = int(entry.get("duration_ms", 0))
         chapters.append(
             Chapter(
+                id=str(entry.get("id") or ""),
                 title=entry.get("title", "Chapter"),
                 duration_ms=max(duration, 0),
                 file=file_path,
                 start_ms=int(entry.get("start_ms", 0)),
             )
         )
-    if chapters and all(c.file is not None for c in chapters):
-        return chapters
-    return []
+    return chapters
+
+
+def _audio_format_label(path: Path) -> str:
+    if path.name.endswith(".chapters.json"):
+        return ""
+    suffix = path.suffix.lower()
+    return suffix.lstrip(".") if suffix else ""
+
+
+def _format_display_title(title: str, fmt: str, variant: str | None = None) -> str:
+    if variant is not None:
+        parts = [variant]
+        if fmt:
+            parts.append(fmt)
+        return f"{title} ({', '.join(parts)})"
+    if fmt:
+        return f"{title} ({fmt})"
+    return title
 
 
 def _audiobook_display_name(path: Path) -> str:
+    fmt = _audio_format_label(path)
     name = path.name
     if name.endswith(".chapters.json"):
-        return name.replace(".audiobook.chapters.json", "").replace(".chapters.json", "")
+        stem = name.removesuffix(".chapters.json")
+        if ".audiobook_" in stem:
+            book, num = stem.rsplit(".audiobook_", 1)
+            return _format_display_title(book, "", num)
+        if ".audiobook-" in stem:
+            book, num = stem.rsplit(".audiobook-", 1)
+            return _format_display_title(book, "", num)
+        if ".audiobook" in stem:
+            return stem.split(".audiobook", 1)[0]
+        return stem.replace(".chapters", "")
+    stem = path.stem
+    if ".audiobook_" in stem:
+        book, num = stem.rsplit(".audiobook_", 1)
+        return _format_display_title(book, fmt, num)
+    if ".audiobook-" in stem:
+        book, num = stem.rsplit(".audiobook-", 1)
+        return _format_display_title(book, fmt, num)
     if ".audiobook." in name:
-        return name.split(".audiobook.", 1)[0]
-    return path.stem
+        book = name.split(".audiobook.", 1)[0]
+        return _format_display_title(book, fmt)
+    return _format_display_title(stem, fmt)
+
+
+def _is_valid_audiobook_file(path: Path) -> bool:
+    """True when ``path`` looks like a finished merged audiobook, not a stub."""
+    if not path.is_file():
+        return False
+    try:
+        return path.stat().st_size >= _MIN_AUDIOBOOK_BYTES
+    except OSError:
+        return False
 
 
 def scan_audiobook_folder(folder: Path) -> list[tuple[str, Path]]:
-    """List audiobooks in ``folder`` as ``(label, load_path)`` pairs.
+    """List finished audiobooks in ``folder`` as ``(label, load_path)`` pairs.
 
-    Finds ``*.audiobook.{m4b,mp3,m4a}`` and, when the final file is missing,
-    chapter sidecars whose section MP3s are still on disk (common after a long
-    render that kept section audio but never merged).
+    Only includes merged ``*.audiobook.{m4b,mp3,m4a}`` files (and numbered
+    variants). Sidecar/section-only leftovers are ignored so the library does
+    not show books that are not actually built yet.
     """
     folder = Path(folder)
     if not folder.is_dir():
         return []
     found: dict[str, Path] = {}
-    for ext in AUDIOBOOK_EXTENSIONS:
-        for path in folder.glob(f"*.audiobook{ext}"):
-            found[path.stem] = path
-    for sidecar in folder.glob("*.audiobook.chapters.json"):
-        key = sidecar.name.removesuffix(".chapters.json")
-        if key in found:
-            continue
-        chapters = _chapters_from_sidecar(sidecar)
-        if chapters and all(c.file is not None and is_pygame_playable(c.file) for c in chapters):
-            found[key] = sidecar
+
+    def _collect(directory: Path) -> None:
+        for ext in AUDIOBOOK_EXTENSIONS:
+            for path in directory.glob(f"*.audiobook{ext}"):
+                if _is_valid_audiobook_file(path):
+                    found[str(path.resolve())] = path
+            for path in directory.glob(f"*.audiobook_*{ext}"):
+                if _is_valid_audiobook_file(path):
+                    found[str(path.resolve())] = path
+            for path in directory.glob(f"*.audiobook-*{ext}"):
+                if _is_valid_audiobook_file(path):
+                    found[str(path.resolve())] = path
+        for child in sorted(directory.iterdir()):
+            if child.is_dir() and not child.name.startswith("."):
+                _collect(child)
+
+    _collect(folder)
+
     return sorted(
         [(_audiobook_display_name(path), path) for path in found.values()],
         key=lambda item: item[0].lower(),

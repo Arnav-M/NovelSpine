@@ -1,5 +1,15 @@
-/** Sidecar URL — proxied in Vite dev to avoid CORS; direct in Tauri/production builds. */
-export const API_BASE = import.meta.env.DEV ? "/novelflow-api" : "http://127.0.0.1:8765";
+/** Sidecar URL — Vite proxy in browser dev; direct localhost in Tauri (dev + prod). */
+function isTauriRuntime(): boolean {
+  return (
+    typeof window !== "undefined" &&
+    ("__TAURI_INTERNALS__" in window || "__TAURI__" in window)
+  );
+}
+
+export const API_BASE =
+  isTauriRuntime() || !import.meta.env.DEV
+    ? "http://127.0.0.1:8765"
+    : "/novelflow-api";
 
 export interface Voice {
   id: string;
@@ -32,6 +42,7 @@ export interface LibraryItem {
 }
 
 export interface Chapter {
+  id?: string | null;
   title: string;
   duration_ms: number;
   file: string | null;
@@ -42,6 +53,15 @@ export interface ChaptersResponse {
   audio_path: string;
   playable_path: string | null;
   chapters: Chapter[];
+}
+
+export interface ChapterTextResponse {
+  title: string;
+  lines: string[];
+  line_weights: number[];
+  line_start_ms?: number[];
+  section_duration_ms?: number;
+  announcement_ms?: number;
 }
 
 export interface JobStatus {
@@ -60,10 +80,21 @@ export interface JobEvent {
 export type Prefs = Record<string, unknown>;
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, {
-    headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
-    ...init,
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}${path}`, {
+      headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
+      ...init,
+    });
+  } catch (err) {
+    throw new Error(
+      err instanceof TypeError
+        ? "Could not reach Novelflow API — try restarting the app."
+        : err instanceof Error
+          ? err.message
+          : String(err),
+    );
+  }
   if (!res.ok) {
     let detail = res.statusText;
     try {
@@ -128,14 +159,43 @@ export async function getChapters(path: string, probe = true): Promise<ChaptersR
   );
 }
 
+export async function getChapterText(
+  markdownPath: string,
+  chapterIndex: number,
+  chapterTitle?: string,
+  options?: {
+    audioPath?: string | null;
+    chapterId?: string | null;
+  },
+): Promise<ChapterTextResponse> {
+  let url = `/reader/chapter-text?markdown_path=${encodeURIComponent(markdownPath)}&chapter_index=${chapterIndex}`;
+  if (chapterTitle) {
+    url += `&chapter_title=${encodeURIComponent(chapterTitle)}`;
+  }
+  if (options?.audioPath) {
+    url += `&audio_path=${encodeURIComponent(options.audioPath)}`;
+  }
+  if (options?.chapterId) {
+    url += `&chapter_id=${encodeURIComponent(options.chapterId)}`;
+  }
+  return request<ChapterTextResponse>(url);
+}
+
 export async function getMediaSpeedPath(path: string, speed: number): Promise<{ path: string }> {
   return request(
     `/media/speed?path=${encodeURIComponent(path)}&speed=${encodeURIComponent(String(speed))}`,
   );
 }
 
-export async function getCover(path: string): Promise<{ cover_path: string | null }> {
-  return request(`/cover?path=${encodeURIComponent(path)}`);
+export async function getCover(
+  path: string,
+  markdownPath?: string | null,
+): Promise<{ cover_path: string | null }> {
+  let url = `/cover?path=${encodeURIComponent(path)}`;
+  if (markdownPath) {
+    url += `&markdown_path=${encodeURIComponent(markdownPath)}`;
+  }
+  return request(url);
 }
 
 export async function getPrefs(): Promise<{ data: Prefs }> {
@@ -159,6 +219,7 @@ export interface ConvertJobRequest {
   pdf_path: string;
   output_path?: string | null;
   keep_raw?: boolean;
+  use_project_folder?: boolean;
 }
 
 export interface AudiobookJobRequest {
@@ -171,6 +232,8 @@ export interface AudiobookJobRequest {
   audio_format?: "m4b" | "mp3" | "m4a";
   disabled_section_ids?: string[];
   chapters_and_title_only?: boolean;
+  use_project_folder?: boolean;
+  audiobook_only?: boolean;
 }
 
 export async function startConvert(body: ConvertJobRequest): Promise<{ job_id: string }> {
