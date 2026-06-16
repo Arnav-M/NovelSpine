@@ -89,3 +89,32 @@ def test_preprocess_splits_and_deflattens():
     assert len(lines) == 1
     assert "|" not in lines[0]
     assert "ancient" in lines[0]
+
+
+def test_refine_skips_chapter_stub_before_back_matter():
+    """Ebooks often label Author's Note as the final chapter in the TOC."""
+    raw = "\n".join([
+        "The Mozart Conspiracy",
+        "SCOTT MARIANI",
+        "Table of Contents",
+        "Chapter One",
+        "Chapter Two",
+        "Chapter Sixty-Nine",
+        "Author\u2019s Note",
+        "Acknowledgements",
+        "Chapter One",
+        "Austria",
+        "Story begins here.",
+        "Chapter Two",
+        "More story.",
+        "Chapter Sixty-Nine",
+        "Glass couldn\u2019t run that fast.",
+    ])
+    out = refine_markdown(raw)
+    before_story = out.split("Story begins here.")[0]
+    assert "## Chapter Sixty-Nine" not in before_story
+    assert "Author" in before_story and "Note" in before_story
+    assert out.index("## Chapter One") < out.index("Story begins here.")
+    assert out.count("## Chapter Sixty-Nine") == 1
+    nav = out[out.index("## Navigation") : out.index("## Chapter One")]
+    assert nav.index("Chapter One") < nav.index("Chapter Sixty-Nine")

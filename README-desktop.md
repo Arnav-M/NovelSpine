@@ -182,6 +182,47 @@ Manual steps (same as `package:win`):
    npm run tauri:build
    ```
 
+## Accessibility
+
+Novelflow Desktop is built for **Windows screen readers** (Narrator, NVDA, JAWS) via WebView2 UI Automation. The React UI uses ARIA landmarks, labeled controls, live regions for job progress, keyboard navigation, visible focus rings, and high-contrast (`forced-colors`) styling.
+
+### Navigation
+
+- **Skip link** — Tab once after launch to jump to main content.
+- **Main tabs** — Document, Audiobook, and Player. Use **Left/Right arrow** on the tab bar to move and activate tabs; **Home/End** jump to first/last tab.
+- **Settings** — Header button opens a focus-trapped dialog; **Escape** closes and returns focus.
+
+### Player keyboard shortcuts
+
+Active on the **Player** tab when focus is not in a text field or open dialog:
+
+| Key | Action |
+|-----|--------|
+| Space | Play / pause |
+| Left arrow | Back 10 seconds |
+| Right arrow | Forward 10 seconds |
+| `[` | Previous chapter |
+| `]` | Next chapter |
+| `?` | Open shortcuts help |
+
+The book timeline scrubber supports **Left/Right** (±5 s or 1% of book), **Home**, and **End**. Chapter list supports **Up/Down** and **Enter** to jump.
+
+### Manual test checklist (Narrator)
+
+1. Launch the app — hear API status and skip link.
+2. **Document** tab — choose or drop a file, convert; hear progress and completion announcements.
+3. **Audiobook** tab — select voice/sections, create audiobook; hear estimate updates and job outcome.
+4. **Player** tab — select library item, play, seek with timeline and shortcuts, move chapters with keyboard.
+5. Open **Settings** and shortcuts help — verify Tab stays inside, Escape closes.
+
+Turn **Scan mode off** in forms; use Scan mode for reading static content.
+
+### Known limits
+
+- Cover art in the player is decorative (no alt text).
+- Drag-and-drop is supplementary; use **Choose file** / **Browse** if pointer access is difficult.
+- Some color cues (status pill, progress tone) are paired with text for screen readers.
+
 ## Player audio
 
 The React **Player** tab uses the HTML5 `<audio>` element (via `convertFileSrc` in Tauri). The legacy Tkinter player used pygame; that code remains under `src/novelflow/gui_player_tab.py` but is not used by this app.

@@ -3,14 +3,14 @@
 from __future__ import annotations
 
 import re
-import tkinter as tk
 from pathlib import Path
+from typing import Any
 
 import pymupdf
 
 COVER_EXTENSIONS = (".png", ".jpg", ".jpeg", ".webp", ".gif")
 _MD_IMAGE_RE = re.compile(r"!\[[^\]]*\]\(([^)]+)\)")
-_COVER_PHOTO_CACHE: dict[tuple[str, int], tk.PhotoImage] = {}
+_COVER_PHOTO_CACHE: dict[tuple[str, int], Any] = {}
 
 
 def clear_cover_photo_cache() -> None:
@@ -131,6 +131,8 @@ def load_cover_photo(path: Path, *, max_size: int, master: tk.Misc | None = None
 
     Results are cached by ``(path, max_size)`` so focus/resize events do not reload from disk.
     """
+    import tkinter as tk
+
     src = Path(path).resolve()
     if not is_cover_image(src):
         return None

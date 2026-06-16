@@ -13,6 +13,7 @@
     "build:sidecar": "python -m PyInstaller novelflow-sidecar.spec",
     "build:sidecar:win": "powershell -ExecutionPolicy Bypass -File scripts/build-sidecar.ps1",
     "fetch:ffmpeg": "powershell -ExecutionPolicy Bypass -File scripts/fetch-ffmpeg.ps1",
+    "clean": "powershell -ExecutionPolicy Bypass -File scripts/clean.ps1",
     "tauri": "tauri dev --config src-tauri/tauri.conf.json",
     "tauri:build": "tauri build --config src-tauri/tauri.conf.json",
     "package:win": "powershell -ExecutionPolicy Bypass -File scripts/package.ps1"

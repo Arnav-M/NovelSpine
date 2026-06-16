@@ -2,16 +2,21 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from novelflow.cover_art import find_cover_for_audiobook, find_cover_in_markdown
-from novelflow.player import load_chapters, scan_audiobook_folder
+from novelflow.player import load_chapters, probe_chapter_durations, scan_audiobook_folder
 
 
 def _guess_markdown(audio_path: Path) -> Path | None:
     folder = audio_path.parent
     stem = audio_path.stem
-    if ".audiobook" in stem:
+    if ".audiobook_" in stem:
+        base = stem.rsplit(".audiobook_", 1)[0]
+    elif ".audiobook-" in stem:
+        base = stem.rsplit(".audiobook-", 1)[0]
+    elif ".audiobook" in stem:
         base = stem.split(".audiobook", 1)[0]
     else:
         base = stem
@@ -19,8 +24,22 @@ def _guess_markdown(audio_path: Path) -> Path | None:
         candidate = folder / name
         if candidate.is_file():
             return candidate.resolve()
-    readable = folder / f"{base}.readable.md"
-    return readable.resolve() if readable.is_file() else None
+    return None
+
+
+def _markdown_for_audio(audio_path: Path) -> Path | None:
+    source = audio_path.with_suffix(".source.json")
+    if source.is_file():
+        try:
+            data = json.loads(source.read_text(encoding="utf-8"))
+            stored = data.get("markdown_path")
+            if isinstance(stored, str) and stored.strip():
+                candidate = Path(stored).resolve()
+                if candidate.is_file():
+                    return candidate
+        except (json.JSONDecodeError, OSError, TypeError):
+            pass
+    return _guess_markdown(audio_path)
 
 
 def scan_library(root: str) -> list[dict]:
@@ -29,7 +48,9 @@ def scan_library(root: str) -> list[dict]:
         return []
     items: list[dict] = []
     for label, audio_path in scan_audiobook_folder(folder):
-        md = _guess_markdown(audio_path)
+        if not audio_path.is_file():
+            continue
+        md = _markdown_for_audio(audio_path)
         cover = find_cover_for_audiobook(audio_path, markdown_path=md)
         items.append(
             {
@@ -45,6 +66,8 @@ def scan_library(root: str) -> list[dict]:
 def chapters_for_audio(audio_path: str, *, probe_durations: bool = True) -> dict:
     path = Path(audio_path).resolve()
     chapters = load_chapters(path, probe_durations=probe_durations)
+    if probe_durations and chapters:
+        probe_chapter_durations(chapters)
     playable = None
     if path.is_file() and path.suffix.lower() in {".mp3", ".m4a", ".m4b", ".ogg", ".wav"}:
         playable = str(path)
@@ -55,6 +78,7 @@ def chapters_for_audio(audio_path: str, *, probe_durations: bool = True) -> dict
         "playable_path": playable,
         "chapters": [
             {
+                "id": c.id or None,
                 "title": c.title,
                 "duration_ms": c.duration_ms,
                 "file": str(c.file) if c.file else None,
@@ -67,4 +91,25 @@ def chapters_for_audio(audio_path: str, *, probe_durations: bool = True) -> dict
 
 def cover_for_markdown(markdown_path: str) -> str | None:
     found = find_cover_in_markdown(Path(markdown_path))
+    return str(found.resolve()) if found else None
+
+
+def cover_for_path(path: str, *, markdown_path: str | None = None) -> str | None:
+    """Resolve cover art from a markdown file, audiobook path, or both."""
+    resolved = Path(path).resolve()
+    if resolved.suffix.lower() == ".md":
+        return cover_for_markdown(str(resolved))
+
+    md: Path | None = None
+    if markdown_path:
+        candidate = Path(markdown_path).resolve()
+        if candidate.is_file():
+            md = candidate
+    if md is None and resolved.is_file():
+        md = _markdown_for_audio(resolved)
+
+    if not resolved.is_file():
+        return None
+
+    found = find_cover_for_audiobook(resolved, markdown_path=md)
     return str(found.resolve()) if found else None

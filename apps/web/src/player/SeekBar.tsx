@@ -4,9 +4,19 @@ interface Props {
   disabled?: boolean;
   onChange: (ms: number) => void;
   className?: string;
+  ariaLabel?: string;
+  valueText?: string;
 }
 
-export default function SeekBar({ value, max, disabled, onChange, className = "" }: Props) {
+export default function SeekBar({
+  value,
+  max,
+  disabled,
+  onChange,
+  className = "",
+  ariaLabel = "Seek",
+  valueText,
+}: Props) {
   const pct = max > 0 ? Math.min(100, (value / max) * 100) : 0;
   return (
     <div className={`seek-bar ${className}`}>
@@ -21,7 +31,8 @@ export default function SeekBar({ value, max, disabled, onChange, className = ""
           disabled={disabled}
           onChange={(e) => onChange(Number(e.target.value))}
           className="seek-bar-input"
-          aria-label="Seek"
+          aria-label={ariaLabel}
+          aria-valuetext={valueText}
         />
       </div>
     </div>

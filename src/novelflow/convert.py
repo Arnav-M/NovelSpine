@@ -33,6 +33,7 @@ def convert_pdf(
     audio_format: str = "m4b",
     disabled_section_ids: set[str] | None = None,
     chapters_and_title_only: bool = True,
+    keep_sections: bool = True,
     cancel_check: Callable[[], bool] | None = None,
 ) -> Path:
     """
@@ -128,6 +129,7 @@ def convert_pdf(
             audio_format=audio_format,
             disabled_section_ids=disabled_section_ids,
             chapters_and_title_only=chapters_and_title_only,
+            keep_sections=keep_sections,
             progress=log,
             on_progress=audio_progress,
             cancel_check=cancel_check,

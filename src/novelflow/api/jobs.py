@@ -136,13 +136,20 @@ class JobManager:
         pdf_path: str,
         output_path: str | None,
         keep_raw: bool,
+        use_project_folder: bool = False,
     ) -> Job:
         def worker(job: Job) -> Path:
             from novelflow.convert import convert_pdf
+            from novelflow.project_output import readable_markdown_in_project
+
+            pdf = Path(pdf_path).resolve()
+            out = output_path
+            if use_project_folder and not out:
+                out = str(readable_markdown_in_project(pdf))
 
             return convert_pdf(
                 pdf_path,
-                output_path,
+                out,
                 keep_raw=keep_raw,
                 progress=lambda msg: job.emit("log", message=msg),
                 on_progress=lambda pct: job.emit("progress", percent=pct),
@@ -163,13 +170,34 @@ class JobManager:
         audio_format: str,
         disabled_section_ids: set[str],
         chapters_and_title_only: bool,
+        use_project_folder: bool = False,
+        audiobook_only: bool = False,
     ) -> Job:
         def worker(job: Job) -> Any:
             from novelflow.audiobook import create_audiobook
             from novelflow.convert import convert_pdf
+            from novelflow.project_output import (
+                AudiobookUnchangedError,
+                audiobook_in_project,
+                cleanup_intermediate_files,
+                newest_audiobook_for_markdown,
+                readable_markdown_in_project,
+            )
+
+            def unchanged_result(exc: AudiobookUnchangedError, md: Path) -> dict[str, Any]:
+                job.emit("log", message=str(exc))
+                payload: dict[str, Any] = {
+                    "audiobook_path": str(exc.existing_path),
+                    "unchanged": True,
+                    "message": str(exc),
+                }
+                if not audiobook_only:
+                    payload["markdown_path"] = str(md)
+                return payload
 
             source = Path(source_path).resolve()
             disabled = disabled_section_ids or None
+            keep_sections = not audiobook_only
 
             if use_existing_md or source.suffix.lower() == ".md":
                 md_path = _resolve_audiobook_markdown(
@@ -177,39 +205,88 @@ class JobManager:
                     markdown_path=markdown_path,
                     output_path=output_path,
                 )
+                audio_out: Path | None
+                if output_path:
+                    audio_out = Path(output_path).resolve()
+                elif use_project_folder:
+                    audio_out = audiobook_in_project(md_path, audio_format)
+                else:
+                    audio_out = None
                 job.emit("log", message=f"Using markdown: {md_path.name}")
-                out, manifest = create_audiobook(
-                    md_path,
-                    Path(output_path) if output_path else None,
-                    engine=engine,
-                    voice=voice,
+                try:
+                    out, manifest = create_audiobook(
+                        md_path,
+                        audio_out,
+                        engine=engine,
+                        voice=voice,
+                        audio_format=audio_format,
+                        disabled_section_ids=disabled,
+                        chapters_and_title_only=chapters_and_title_only,
+                        keep_sections=keep_sections,
+                        progress=lambda msg: job.emit("log", message=msg),
+                        on_progress=lambda pct: job.emit("progress", percent=pct),
+                        cancel_check=job._cancel.is_set,
+                    )
+                except AudiobookUnchangedError as exc:
+                    return unchanged_result(exc, md_path)
+                if audiobook_only:
+                    cleanup_intermediate_files(
+                        out,
+                        md_path,
+                        remove_markdown=True,
+                        progress=lambda msg: job.emit("log", message=msg),
+                    )
+                return {
+                    "markdown_path": "" if audiobook_only else str(md_path),
+                    "audiobook_path": str(out),
+                    "manifest": manifest.to_dict(),
+                }
+
+            md_path = (
+                readable_markdown_in_project(source)
+                if use_project_folder and not output_path
+                else (source.with_suffix(".readable.md") if output_path is None else Path(output_path))
+            )
+            try:
+                convert_pdf(
+                    source,
+                    str(md_path),
+                    audiobook=True,
+                    tts_engine=engine,
+                    tts_voice=voice,
                     audio_format=audio_format,
                     disabled_section_ids=disabled,
                     chapters_and_title_only=chapters_and_title_only,
+                    keep_sections=keep_sections,
                     progress=lambda msg: job.emit("log", message=msg),
                     on_progress=lambda pct: job.emit("progress", percent=pct),
                     cancel_check=job._cancel.is_set,
                 )
-                return {"markdown_path": str(md_path), "audiobook_path": str(out), "manifest": manifest.to_dict()}
-
-            md_path = source.with_suffix(".readable.md") if output_path is None else Path(output_path)
-            convert_pdf(
-                source,
-                str(md_path),
-                audiobook=True,
-                tts_engine=engine,
-                tts_voice=voice,
-                audio_format=audio_format,
-                disabled_section_ids=disabled,
-                chapters_and_title_only=chapters_and_title_only,
-                progress=lambda msg: job.emit("log", message=msg),
-                on_progress=lambda pct: job.emit("progress", percent=pct),
-                cancel_check=job._cancel.is_set,
-            )
-            audio_out = md_path.with_name(f"{md_path.stem.replace('.readable', '')}.audiobook.{audio_format}")
-            if not audio_out.is_file():
-                audio_out = md_path.with_suffix(f".audiobook.{audio_format}")
-            return {"markdown_path": str(md_path.resolve()), "audiobook_path": str(audio_out.resolve())}
+            except AudiobookUnchangedError as exc:
+                return unchanged_result(exc, md_path)
+            if use_project_folder:
+                audio_out = newest_audiobook_for_markdown(md_path, audio_format)
+                if audio_out is None:
+                    audio_out = audiobook_in_project(md_path, audio_format)
+            else:
+                audio_out = newest_audiobook_for_markdown(md_path, audio_format)
+                if audio_out is None:
+                    audio_out = md_path.with_name(
+                        f"{md_path.stem.replace('.readable', '')}.audiobook.{audio_format}",
+                    )
+                    if not audio_out.is_file():
+                        audio_out = md_path.with_suffix(f".audiobook.{audio_format}")
+            if audiobook_only:
+                cleanup_intermediate_files(
+                    audio_out,
+                    md_path,
+                    remove_markdown=True,
+                    progress=lambda msg: job.emit("log", message=msg),
+                )
+            return {
+                "markdown_path": "" if audiobook_only else str(md_path.resolve()),
+                "audiobook_path": str(audio_out.resolve()),
+            }
 
         return self._start("audiobook", worker)
 

@@ -387,6 +387,18 @@
       "description": "Permission identifier",
       "oneOf": [
         {
+          "description": "Show the system Open with dialog for audiobook files.",
+          "type": "string",
+          "const": "allow-open-with-app",
+          "markdownDescription": "Show the system Open with dialog for audiobook files."
+        },
+        {
+          "description": "Reveal files and folders in the system file manager.",
+          "type": "string",
+          "const": "allow-reveal-in-explorer",
+          "markdownDescription": "Reveal files and folders in the system file manager."
+        },
+        {
           "description": "Default core plugins set.\n#### This default permission set includes:\n\n- `core:path:default`\n- `core:event:default`\n- `core:window:default`\n- `core:webview:default`\n- `core:app:default`\n- `core:image:default`\n- `core:resources:default`\n- `core:menu:default`\n- `core:tray:default`",
           "type": "string",
           "const": "core:default",

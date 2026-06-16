@@ -37,22 +37,32 @@ export async function pickFolder(defaultPath?: string): Promise<string | null> {
 }
 
 export async function revealInExplorer(path: string): Promise<void> {
-  if (!isTauri()) return;
-  const { Command } = await import("@tauri-apps/plugin-shell");
-  const win = navigator.userAgent.includes("Windows");
-  if (win) {
-    await Command.create("reveal-item", ["/select,", path]).spawn();
-  } else if (navigator.userAgent.includes("Mac")) {
-    await Command.create("reveal-item", ["-R", path]).spawn();
-  } else {
-    await Command.create("reveal-item", [path]).spawn();
+  const trimmed = path.trim();
+  if (!trimmed) {
+    throw new Error("No path to reveal.");
   }
+  if (isTauri()) {
+    const { invoke } = await import("@tauri-apps/api/core");
+    await invoke("reveal_in_explorer", { path: trimmed });
+    return;
+  }
+  throw new Error("Reveal in Explorer is available in the desktop app.");
 }
 
 export async function openPath(path: string): Promise<void> {
+  await openPathWithApp(path);
+}
+
+/** Show the system "Open with" picker (Windows) or open with the default app. */
+export async function openPathWithApp(path: string): Promise<void> {
   if (isTauri()) {
-    const { open } = await import("@tauri-apps/plugin-shell");
-    await open(path);
+    const { invoke } = await import("@tauri-apps/api/core");
+    try {
+      await invoke("open_with_app", { path });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      throw new Error(message || "Could not open the audiobook file.");
+    }
     return;
   }
   const { API_BASE } = await import("../api/client");
