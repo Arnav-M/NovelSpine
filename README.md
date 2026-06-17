@@ -64,7 +64,7 @@ Section markers are saved in `.manifest.json` with `start_ms` / `end_ms` for in-
 | Engine | When used | Speed |
 |--------|-----------|--------|
 | **auto** (default) | Kokoro if GPU/DirectML detected, else Edge | Best for your PC |
-| **edge** | Online, 6 parallel chunks × 4 parallel sections | 2mins for ~11 hours of audio (Large Novel with 100k+ words |
+| **edge** | Online, 6 parallel chunks × 4 parallel sections | 2mins for ~11 hours of audio (Large Novel with 100k+ words) |
 | **kokoro** | Offline; WAV batched, one MP3 encode per section | Fastest with NVIDIA/DirectML GPU |
 
 ## Desktop app (recommended)
