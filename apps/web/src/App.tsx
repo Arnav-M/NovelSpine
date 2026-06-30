@@ -19,15 +19,13 @@ import { audiobookDisplayName, unifiedProjectFolderFor } from "./lib/files";
 import MiniPlayerBar from "./player/MiniPlayerBar";
 import PlayerOverlays from "./player/PlayerOverlays";
 import { PlayerProvider } from "./player/PlayerContext";
-import AudiobookTab from "./tabs/AudiobookTab";
 import DocumentTab from "./tabs/DocumentTab";
 import PlayerTab from "./tabs/PlayerTab";
 
-type TabId = "document" | "audiobook" | "player";
+type TabId = "document" | "player";
 
 const TABS: { id: TabId; label: string; icon: string; panelId: string }[] = [
-  { id: "document", label: "Document", icon: "📄", panelId: "panel-document" },
-  { id: "audiobook", label: "Audiobook", icon: "🎧", panelId: "panel-audiobook" },
+  { id: "document", label: "Create", icon: "📄", panelId: "panel-document" },
   { id: "player", label: "Player", icon: "▶", panelId: "panel-player" },
 ];
 
@@ -369,8 +367,7 @@ function AppShell() {
     [announce, appendLog, handleJobEvent],
   );
 
-  const autoExpandDocumentLog = progress.busy && activeJobKind === "convert";
-  const autoExpandAudiobookLog = progress.busy && activeJobKind === "audiobook";
+  const autoExpandCreateLog = progress.busy && (activeJobKind === "convert" || activeJobKind === "audiobook");
 
   return (
     <PlayerProvider
@@ -448,44 +445,22 @@ function AppShell() {
               markdownPath={markdownPath}
               projectFolder={projectFolder}
               onProjectFolderChange={onProjectFolderChange}
-              busy={progress.busy}
-              activeJobId={activeJobId}
-              onLog={appendLog}
-              logEntries={logEntries}
-              onClearLog={clearLog}
-              logCollapsed={logCollapsed}
-              onLogCollapsedChange={onLogCollapsedChange}
-              autoExpandLog={autoExpandDocumentLog}
-              startJobTracking={(jobId, title, message) =>
-                startJobTracking(jobId, title, message, "convert")
-              }
-              setProgress={setProgress}
-            />
-            </div>
-          )}
-          {tab === "audiobook" && (
-            <div
-              role="tabpanel"
-              id="panel-audiobook"
-              aria-labelledby="tab-audiobook"
-              tabIndex={0}
-            >
-              <AudiobookTab
-              sourcePath={sourcePath}
-              markdownPath={markdownPath}
               prefs={prefs}
               onPrefsChange={updatePrefs}
+              lastAudiobook={lastAudiobook}
+              onPlayInApp={() => setTab("player")}
               busy={progress.busy}
               activeJobId={activeJobId}
               onLog={appendLog}
-              lastAudiobook={lastAudiobook}
-              onPlayInApp={() => setTab("player")}
               logEntries={logEntries}
               onClearLog={clearLog}
               logCollapsed={logCollapsed}
               onLogCollapsedChange={onLogCollapsedChange}
-              autoExpandLog={autoExpandAudiobookLog}
-              startJobTracking={(jobId, title, message) =>
+              autoExpandLog={autoExpandCreateLog}
+              startConvertJobTracking={(jobId, title, message) =>
+                startJobTracking(jobId, title, message, "convert")
+              }
+              startAudiobookJobTracking={(jobId, title, message) =>
                 startJobTracking(jobId, title, message, "audiobook")
               }
               setProgress={setProgress}

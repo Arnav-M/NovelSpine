@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   getSections,
   listVoices,
@@ -8,12 +8,11 @@ import {
   type Section,
   type Voice,
 } from "../api/client";
-import { openPath, toAssetUrl } from "../bridge/tauri";
-import SectionPickerModal from "../components/SectionPickerModal";
-import WorkTabLayout from "../components/WorkTabLayout";
-import type { LogEntry } from "../components/ActivityLog";
-import type { ProgressState } from "../components/ProgressFooter";
-import { usePlayer } from "../player/PlayerContext";
+import { useModalA11y } from "../a11y/useModalA11y";
+import { toAssetUrl } from "../bridge/tauri";
+import SectionPickerModal from "./SectionPickerModal";
+import type { LogEntry } from "./ActivityLog";
+import type { ProgressState } from "./ProgressFooter";
 import {
   formatAudiobookDuration,
   formatWordCount,
@@ -29,38 +28,26 @@ interface Props {
   prefs: Prefs;
   onPrefsChange: (patch: Prefs) => Promise<void>;
   busy: boolean;
-  activeJobId: string | null;
   onLog: (text: string, tone?: LogEntry["tone"]) => void;
-  onPlayInApp: () => void;
-  lastAudiobook: string;
-  logEntries: LogEntry[];
-  onClearLog: () => void;
-  logCollapsed: boolean;
-  onLogCollapsedChange: (collapsed: boolean) => void;
-  autoExpandLog: boolean;
   startJobTracking: (jobId: string, title: string, message: string) => () => void;
   setProgress: (state: ProgressState | ((prev: ProgressState) => ProgressState)) => void;
+  onClose: () => void;
+  returnFocusRef?: React.RefObject<HTMLElement | null>;
 }
 
-export default function AudiobookTab({
+export default function AudiobookSettingsModal({
   sourcePath,
   markdownPath,
   prefs,
   onPrefsChange,
   busy,
-  activeJobId,
   onLog,
-  onPlayInApp,
-  lastAudiobook,
-  logEntries,
-  onClearLog,
-  logCollapsed,
-  onLogCollapsedChange,
-  autoExpandLog,
   startJobTracking,
   setProgress,
+  onClose,
+  returnFocusRef,
 }: Props) {
-  const player = usePlayer();
+  const dialogRef = useRef<HTMLDivElement>(null);
   const engine = String(prefs.default_engine ?? "edge");
   const [voices, setVoices] = useState<Voice[]>([]);
   const [voiceId, setVoiceId] = useState(String(prefs.default_voice ?? ""));
@@ -75,6 +62,8 @@ export default function AudiobookTab({
   const [previewing, setPreviewing] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
 
+  useModalA11y(dialogRef, { open: true, onClose, returnFocusRef });
+
   const displayPath = sourcePath || markdownPath;
 
   const mdPath = useMemo(() => {
@@ -82,8 +71,6 @@ export default function AudiobookTab({
     if (sourcePath.toLowerCase().endsWith(".md")) return sourcePath;
     return "";
   }, [markdownPath, sourcePath]);
-
-  const outputReady = Boolean(lastAudiobook);
 
   const stats = useMemo(() => selectionStats(sections, enabled), [enabled, sections]);
 
@@ -195,6 +182,7 @@ export default function AudiobookTab({
         audiobook_only: Boolean(prefs.audiobook_only_cleanup),
       });
       startJobTracking(job_id, "Create audiobook", "Synthesizing audio…");
+      onClose();
     } catch (err) {
       onLog(err instanceof Error ? err.message : String(err), "danger");
       setProgress((prev) => ({ ...prev, busy: false, tone: "danger", message: "Audiobook failed." }));
@@ -205,6 +193,7 @@ export default function AudiobookTab({
     engine,
     format,
     mdPath,
+    onClose,
     onLog,
     onPrefsChange,
     preset,
@@ -215,36 +204,22 @@ export default function AudiobookTab({
     voiceId,
   ]);
 
-  const openAudiobook = useCallback(async () => {
-    if (!lastAudiobook) return;
-    try {
-      await openPath(lastAudiobook);
-    } catch (err) {
-      onLog(err instanceof Error ? err.message : String(err), "danger");
-    }
-  }, [lastAudiobook, onLog]);
-
-  const playInApp = useCallback(async () => {
-    if (!lastAudiobook) return;
-    await player.loadFromPath(lastAudiobook);
-    onPlayInApp();
-  }, [lastAudiobook, onPlayInApp, player]);
-
   return (
-    <WorkTabLayout
-      logEntries={logEntries}
-      onClearLog={onClearLog}
-      autoExpand={autoExpandLog}
-      logCollapsedPref={logCollapsed}
-      onLogCollapsedChange={onLogCollapsedChange}
-    >
-      <div className="tab-panel">
-        <h2 className="section-heading">Audiobook</h2>
-        <p className="section-subtitle">
-          Pick a voice, format, and sections, then create the audiobook. Source comes from the Document tab.
-        </p>
+    <>
+      <div className="modal-backdrop" role="presentation" onClick={onClose}>
+        <div
+          ref={dialogRef}
+          className="modal modal-wide"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="audiobook-settings-title"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <h2 id="audiobook-settings-title">Audiobook settings</h2>
+          <p className="section-subtitle">
+            Pick a voice, format, and sections, then create the audiobook.
+          </p>
 
-        <div className="card">
           <div className="form-row">
             <label htmlFor="ab-source">Source</label>
             <input
@@ -252,7 +227,7 @@ export default function AudiobookTab({
               type="text"
               readOnly
               value={displayPath}
-              placeholder="Convert a document on the Document tab first…"
+              placeholder="Select a document first…"
             />
           </div>
 
@@ -320,7 +295,9 @@ export default function AudiobookTab({
             </div>
 
             {!mdPath ? (
-              <p className="audiobook-estimate-empty">Load a document to see section stats and duration.</p>
+              <p className="audiobook-estimate-empty">
+                Markdown not ready yet — sections will load after conversion, or pick a markdown file.
+              </p>
             ) : !sections.length ? (
               <p className="audiobook-estimate-empty">Loading sections…</p>
             ) : (
@@ -328,13 +305,24 @@ export default function AudiobookTab({
                 {stats.words > 0 ? (
                   <p className="audiobook-estimate-line">{estimateLine}</p>
                 ) : (
-                  <p className="audiobook-estimate-empty">No sections selected — choose a preset or pick sections.</p>
+                  <p className="audiobook-estimate-empty">
+                    No sections selected — choose a preset or pick sections.
+                  </p>
                 )}
               </div>
             )}
           </div>
 
-          <div className="action-row">
+          {Boolean(prefs.audiobook_only_cleanup) && (
+            <p className="estimate muted">
+              Intermediate files will be removed when done — only the audiobook, chapter index, and cover are kept.
+            </p>
+          )}
+
+          <div className="modal-actions">
+            <button type="button" className="btn btn-ghost" onClick={onClose}>
+              Cancel
+            </button>
             <button
               type="button"
               className="btn btn-accent"
@@ -350,23 +338,7 @@ export default function AudiobookTab({
             >
               Create audiobook
             </button>
-            <button type="button" className="btn" disabled={!outputReady} onClick={() => void openAudiobook()}>
-              Open audiobook
-            </button>
-            <button type="button" className="btn" disabled={!outputReady} onClick={() => void playInApp()}>
-              Play in app
-            </button>
           </div>
-          {activeJobId && busy && <p className="estimate">Audiobook job running…</p>}
-          {Boolean(prefs.audiobook_only_cleanup) && (
-            <p className="estimate muted">
-              Intermediate files will be removed when done — only the audiobook, chapter index, and cover are kept.
-            </p>
-          )}
-          <p className="estimate muted">
-            Output goes in a subfolder under the library folder (e.g. MyBook/MyBook.audiobook.m4b).
-            Change the library folder on the Document tab.
-          </p>
         </div>
       </div>
 
@@ -378,7 +350,7 @@ export default function AudiobookTab({
           onClose={() => setPickerOpen(false)}
         />
       )}
-    </WorkTabLayout>
+    </>
   );
 }
 
