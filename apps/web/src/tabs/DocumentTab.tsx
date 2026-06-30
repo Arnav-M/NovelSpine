@@ -1,11 +1,13 @@
 import { useCallback, useRef, useState } from "react";
-import { startConvert } from "../api/client";
+import { startConvert, type Prefs } from "../api/client";
 import { useModalA11y } from "../a11y/useModalA11y";
 import { useLiveRegion } from "../a11y/LiveRegionContext";
-import { isTauri, pickFile, pickFolder, revealInExplorer } from "../bridge/tauri";
+import { isTauri, openPath, pickFile, pickFolder, revealInExplorer } from "../bridge/tauri";
+import AudiobookSettingsModal from "../components/AudiobookSettingsModal";
 import WorkTabLayout from "../components/WorkTabLayout";
 import type { ProgressState } from "../components/ProgressFooter";
 import type { LogEntry } from "../components/ActivityLog";
+import { usePlayer } from "../player/PlayerContext";
 import {
   joinOutputPath,
   pathFromDataTransfer,
@@ -20,6 +22,10 @@ interface Props {
   markdownPath: string;
   projectFolder: string;
   onProjectFolderChange: (folder: string) => Promise<void>;
+  prefs: Prefs;
+  onPrefsChange: (patch: Prefs) => Promise<void>;
+  lastAudiobook: string;
+  onPlayInApp: () => void;
   busy: boolean;
   activeJobId: string | null;
   onLog: (text: string, tone?: LogEntry["tone"]) => void;
@@ -28,7 +34,8 @@ interface Props {
   logCollapsed: boolean;
   onLogCollapsedChange: (collapsed: boolean) => void;
   autoExpandLog: boolean;
-  startJobTracking: (jobId: string, title: string, message: string) => () => void;
+  startConvertJobTracking: (jobId: string, title: string, message: string) => () => void;
+  startAudiobookJobTracking: (jobId: string, title: string, message: string) => () => void;
   setProgress: (state: ProgressState | ((prev: ProgressState) => ProgressState)) => void;
 }
 
@@ -39,6 +46,10 @@ export default function DocumentTab({
   markdownPath,
   projectFolder,
   onProjectFolderChange,
+  prefs,
+  onPrefsChange,
+  lastAudiobook,
+  onPlayInApp,
   busy,
   activeJobId,
   onLog,
@@ -47,18 +58,22 @@ export default function DocumentTab({
   logCollapsed,
   onLogCollapsedChange,
   autoExpandLog,
-  startJobTracking,
+  startConvertJobTracking,
+  startAudiobookJobTracking,
   setProgress,
 }: Props) {
+  const player = usePlayer();
   const [keepRaw, setKeepRaw] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const [staging, setStaging] = useState(false);
   const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [audiobookOpen, setAudiobookOpen] = useState(false);
   const [outputFileName, setOutputFileName] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
   const unsubscribeRef = useRef<(() => void) | null>(null);
   const advancedDialogRef = useRef<HTMLDivElement>(null);
   const advancedTriggerRef = useRef<HTMLButtonElement>(null);
+  const audiobookTriggerRef = useRef<HTMLButtonElement>(null);
   const { announce } = useLiveRegion();
 
   useModalA11y(advancedDialogRef, {
@@ -70,6 +85,7 @@ export default function DocumentTab({
   const isPdf = sourcePath.toLowerCase().endsWith(".pdf");
   const isMarkdown = sourcePath.toLowerCase().endsWith(".md");
   const outputReady = Boolean(markdownPath);
+  const audiobookReady = Boolean(lastAudiobook);
   const bookOutputFolder = sourcePath ? suggestedProjectFolderOutput(sourcePath).folder : "";
   const customOutputPath =
     outputFileName.trim() && bookOutputFolder
@@ -149,13 +165,28 @@ export default function DocumentTab({
         use_project_folder: !customOutputPath,
       });
       unsubscribeRef.current?.();
-      unsubscribeRef.current = startJobTracking(job_id, "Convert PDF", "Extracting text…");
+      unsubscribeRef.current = startConvertJobTracking(job_id, "Convert PDF", "Extracting text…");
       announce("PDF conversion started.", "assertive");
     } catch (err) {
       onLog(err instanceof Error ? err.message : String(err), "danger");
       setProgress((prev) => ({ ...prev, busy: false, tone: "danger", message: "Conversion failed." }));
     }
-  }, [announce, busy, customOutputPath, isPdf, keepRaw, onLog, setProgress, sourcePath, startJobTracking]);
+  }, [announce, busy, customOutputPath, isPdf, keepRaw, onLog, setProgress, sourcePath, startConvertJobTracking]);
+
+  const openAudiobook = useCallback(async () => {
+    if (!lastAudiobook) return;
+    try {
+      await openPath(lastAudiobook);
+    } catch (err) {
+      onLog(err instanceof Error ? err.message : String(err), "danger");
+    }
+  }, [lastAudiobook, onLog]);
+
+  const playInApp = useCallback(async () => {
+    if (!lastAudiobook) return;
+    await player.loadFromPath(lastAudiobook);
+    onPlayInApp();
+  }, [lastAudiobook, onPlayInApp, player]);
 
   const openAdvanced = useCallback(() => {
     if (outputFileName.trim()) {
@@ -200,9 +231,9 @@ export default function DocumentTab({
       onLogCollapsedChange={onLogCollapsedChange}
     >
       <div className="tab-panel">
-        <h2 className="section-heading">Source document</h2>
+        <h2 className="section-heading">Create</h2>
         <p className="section-subtitle">
-          Drop a PDF or markdown file here, or click the area below to browse.
+          Add a PDF or markdown file, then create markdown or an audiobook.
         </p>
 
         <div className="card">
@@ -310,7 +341,16 @@ export default function DocumentTab({
               disabled={!isPdf || busy || staging}
               onClick={() => void convert()}
             >
-              Convert to markdown
+              Create MD
+            </button>
+            <button
+              ref={audiobookTriggerRef}
+              type="button"
+              className="btn btn-accent"
+              disabled={!(isPdf || isMarkdown) || busy || staging}
+              onClick={() => setAudiobookOpen(true)}
+            >
+              Create audiobook
             </button>
             <button type="button" className="btn btn-ghost" disabled={!isPdf} ref={advancedTriggerRef} onClick={openAdvanced} aria-label="Advanced markdown output options">
               Advanced…
@@ -323,14 +363,39 @@ export default function DocumentTab({
           </label>
 
           {isMarkdown && (
-            <p className="estimate">Markdown loaded — open the Audiobook tab to create audio.</p>
+            <p className="estimate">Markdown loaded — use Create audiobook to generate audio.</p>
           )}
           {outputReady && (
             <p className="estimate muted">Markdown: {markdownPath.split(/[/\\]/).pop()}</p>
           )}
-          {activeJobId && busy && <p className="estimate">Conversion in progress…</p>}
+          {audiobookReady && (
+            <div className="action-row">
+              <button type="button" className="btn" disabled={!audiobookReady} onClick={() => void openAudiobook()}>
+                Open audiobook
+              </button>
+              <button type="button" className="btn" disabled={!audiobookReady} onClick={() => void playInApp()}>
+                Play in app
+              </button>
+            </div>
+          )}
+          {activeJobId && busy && <p className="estimate">Job in progress…</p>}
         </div>
       </div>
+
+      {audiobookOpen && (
+        <AudiobookSettingsModal
+          sourcePath={sourcePath}
+          markdownPath={markdownPath}
+          prefs={prefs}
+          onPrefsChange={onPrefsChange}
+          busy={busy}
+          onLog={onLog}
+          startJobTracking={startAudiobookJobTracking}
+          setProgress={setProgress}
+          onClose={() => setAudiobookOpen(false)}
+          returnFocusRef={audiobookTriggerRef}
+        />
+      )}
 
       {advancedOpen && (
         <div className="modal-backdrop" role="presentation" onClick={() => setAdvancedOpen(false)}>
