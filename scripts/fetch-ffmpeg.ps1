@@ -14,8 +14,8 @@ if ((Test-Path $FfmpegExe) -and (Test-Path $Marker)) {
 
 Write-Host "Downloading ffmpeg (Windows x64 essentials)..."
 $ZipUrl = "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip"
-$ZipPath = Join-Path $env:TEMP "novelflow-ffmpeg.zip"
-$ExtractRoot = Join-Path $env:TEMP "novelflow-ffmpeg-extract"
+$ZipPath = Join-Path $env:TEMP "novelspine-ffmpeg.zip"
+$ExtractRoot = Join-Path $env:TEMP "novelspine-ffmpeg-extract"
 
 if (Test-Path $ZipPath) { Remove-Item -Force $ZipPath }
 if (Test-Path $ExtractRoot) { Remove-Item -Recurse -Force $ExtractRoot }

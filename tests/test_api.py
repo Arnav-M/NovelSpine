@@ -1,4 +1,4 @@
-"""Basic tests for the Novelflow local API."""
+"""Basic tests for the NovelSpine local API."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-from novelflow.api.app import app
+from novelspine.api.app import app
 
 client = TestClient(app)
 
@@ -55,7 +55,7 @@ def test_sections_missing_file() -> None:
 
 
 def test_pick_folder_endpoint(monkeypatch) -> None:
-    from novelflow.api import dialogs as dialogs_module
+    from novelspine.api import dialogs as dialogs_module
 
     monkeypatch.setattr(dialogs_module, "pick_folder_dialog", lambda: "C:\\Books")
     response = client.post("/pick-folder")
@@ -96,7 +96,7 @@ def test_media_speed_missing_file() -> None:
 
 
 def test_get_resume_always_object(monkeypatch) -> None:
-    from novelflow.api import prefs as prefs_module
+    from novelspine.api import prefs as prefs_module
 
     monkeypatch.setattr(prefs_module, "load_resume", lambda: None)  # type: ignore[return-value]
     response = client.get("/resume")
@@ -105,7 +105,7 @@ def test_get_resume_always_object(monkeypatch) -> None:
 
 
 def test_resolve_audiobook_markdown_prefers_explicit_path(tmp_path: Path) -> None:
-    from novelflow.api.jobs import _resolve_audiobook_markdown
+    from novelspine.api.jobs import _resolve_audiobook_markdown
 
     pdf = tmp_path / "book.pdf"
     pdf.write_bytes(b"%PDF-1.4 fake")
@@ -117,7 +117,7 @@ def test_resolve_audiobook_markdown_prefers_explicit_path(tmp_path: Path) -> Non
 
 
 def test_resolve_audiobook_markdown_sibling(tmp_path: Path) -> None:
-    from novelflow.api.jobs import _resolve_audiobook_markdown
+    from novelspine.api.jobs import _resolve_audiobook_markdown
 
     pdf = tmp_path / "book.pdf"
     pdf.write_bytes(b"%PDF-1.4 fake")

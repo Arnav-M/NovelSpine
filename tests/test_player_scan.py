@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from novelflow.player import scan_audiobook_folder
+from novelspine.player import scan_audiobook_folder
 
 
 def test_scan_finds_numbered_audiobook_variants(tmp_path: Path) -> None:

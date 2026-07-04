@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from novelflow.api import prefs as prefs_mod
+from novelspine.api import prefs as prefs_mod
 
 
 def test_load_prefs_migrates_audiobook_library_dir_to_project_folder(

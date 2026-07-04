@@ -8,9 +8,9 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from novelflow.audiobook import create_audiobook
-from novelflow.audio_merge import ChapterMarker
-from novelflow.project_output import (
+from novelspine.audiobook import create_audiobook
+from novelspine.audio_merge import ChapterMarker
+from novelspine.project_output import (
     AudiobookBuildSpec,
     default_audiobook_path,
     work_dir_for_build,
@@ -71,9 +71,9 @@ def test_voice_change_does_not_reuse_cached_sections(markdown_source: tuple[Path
     engine_b = _RecordingEngine("voice-b")
     audio_out = default_audiobook_path(md, "m4b")
 
-    with patch("novelflow.audiobook.get_engine", side_effect=[engine_a, engine_b]):
+    with patch("novelspine.audiobook.get_engine", side_effect=[engine_a, engine_b]):
         with patch(
-            "novelflow.audiobook.merge_audiobook",
+            "novelspine.audiobook.merge_audiobook",
             return_value=(
                 audio_out,
                 [ChapterMarker(id="chapter-one", title="Chapter One", start_ms=0, end_ms=1000)],
@@ -99,9 +99,9 @@ def test_markdown_edit_with_same_section_ids_re_synthesizes(markdown_source: tup
     engine_second = _RecordingEngine("second")
     audio_out = default_audiobook_path(md, "m4b")
 
-    with patch("novelflow.audiobook.get_engine", return_value=engine_first):
+    with patch("novelspine.audiobook.get_engine", return_value=engine_first):
         with patch(
-            "novelflow.audiobook.merge_audiobook",
+            "novelspine.audiobook.merge_audiobook",
             return_value=(
                 audio_out,
                 [ChapterMarker(id="chapter-one", title="Chapter One", start_ms=0, end_ms=1000)],
@@ -112,9 +112,9 @@ def test_markdown_edit_with_same_section_ids_re_synthesizes(markdown_source: tup
     new_text = old_text + "\n\nMore text."
     md.write_text(new_text, encoding="utf-8")
 
-    with patch("novelflow.audiobook.get_engine", return_value=engine_second):
+    with patch("novelspine.audiobook.get_engine", return_value=engine_second):
         with patch(
-            "novelflow.audiobook.merge_audiobook",
+            "novelspine.audiobook.merge_audiobook",
             return_value=(
                 audio_out.with_name("Novel.audiobook_1.m4b"),
                 [ChapterMarker(id="chapter-one", title="Chapter One", start_ms=0, end_ms=1000)],
@@ -142,11 +142,11 @@ def test_chapters_sidecar_keeps_duplicate_titles(markdown_source: tuple[Path, st
     ]
     fake_engine = MagicMock()
 
-    with patch("novelflow.audiobook.get_engine", return_value=fake_engine):
+    with patch("novelspine.audiobook.get_engine", return_value=fake_engine):
         fake_engine.synthesize_section.side_effect = lambda _text, output_path, **kwargs: output_path.write_bytes(
             b"x" * 2048
         )
-        with patch("novelflow.audiobook.merge_audiobook", return_value=(audio_out, markers)):
+        with patch("novelspine.audiobook.merge_audiobook", return_value=(audio_out, markers)):
             out, _manifest = create_audiobook(
                 md,
                 audio_out,
@@ -176,9 +176,9 @@ def test_resume_reuses_sections_within_same_build_spec(markdown_source: tuple[Pa
     engine = _RecordingEngine("should-not-run")
     audio_out = default_audiobook_path(md, "m4b")
 
-    with patch("novelflow.audiobook.get_engine", return_value=engine):
+    with patch("novelspine.audiobook.get_engine", return_value=engine):
         with patch(
-            "novelflow.audiobook.merge_audiobook",
+            "novelspine.audiobook.merge_audiobook",
             return_value=(
                 audio_out,
                 [

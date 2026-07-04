@@ -3,22 +3,22 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "novelflow"
-version = "3.0.0"
+name = "novelspine"
+version = "1.0.0"
 description = "Convert PDF novels to readable markdown and chapter-marked audiobooks."
 readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"
 keywords = ["pdf", "markdown", "pymupdf", "ebook", "fiction", "audiobook", "tts"]
-authors = [{ name = "Novelflow" }]
+authors = [{ name = "NovelSpine" }]
 dependencies = [
     "pymupdf>=1.24.0",
 ]
 
 [project.scripts]
-novelflow = "novelflow.cli:main"
-novelflow-gui = "novelflow.gui:main"
-novelflow-api = "novelflow.api.__main__:main"
+novelspine = "novelspine.cli:main"
+novelspine-gui = "novelspine.gui:main"
+novelspine-api = "novelspine.api.__main__:main"
 
 [project.optional-dependencies]
 audiobook = [
@@ -35,7 +35,7 @@ gui = [
     "tkinterdnd2>=0.4",
 ]
 desktop = [
-    "novelflow[audiobook,api]",
+    "novelspine[audiobook,api]",
 ]
 build = ["pyinstaller>=6.0"]
 dev = [
@@ -44,8 +44,8 @@ dev = [
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/novelflow"]
+packages = ["src/novelspine"]
 
 [tool.hatch.build.targets.wheel.force-include]
-"src/novelflow/assets/icon.ico" = "novelflow/assets/icon.ico"
-"src/novelflow/assets/icon.png" = "novelflow/assets/icon.png"
+"src/novelspine/assets/icon.ico" = "novelspine/assets/icon.ico"
+"src/novelspine/assets/icon.png" = "novelspine/assets/icon.png"

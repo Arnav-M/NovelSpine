@@ -1,6 +1,6 @@
 """Tests for reader sidecar timing helpers."""
 
-from novelflow.reader_sidecar import (
+from novelspine.reader_sidecar import (
     align_line_starts_to_duration,
     line_starts_from_sentence_boundaries,
     line_starts_from_weights,

@@ -1,11 +1,12 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Novelflow",
-  "version": "3.0.0",
-  "identifier": "com.novelflow.desktop",
+  "productName": "NovelSpine",
+  "version": "1.0.0",
+  "identifier": "com.novelspine.desktop",
   "build": {
     "beforeDevCommand": "npm run dev",
     "beforeBuildCommand": "npm run build",
+    "beforeBundleCommand": "powershell -ExecutionPolicy Bypass -File scripts/stage-sidecar-internal.ps1",
     "devUrl": "http://localhost:5174",
     "frontendDist": "../apps/web/dist"
   },
@@ -13,7 +14,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "Novelflow",
+        "title": "NovelSpine",
         "width": 1100,
         "height": 780,
         "resizable": true
@@ -41,7 +42,7 @@
     "active": true,
     "targets": "all",
     "externalBin": [
-      "binaries/novelflow-sidecar"
+      "binaries/novelspine-sidecar"
     ],
     "resources": {
       "resources/ffmpeg/": "ffmpeg/"

@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from novelflow.text_cleanup import collapse_pdf_spacing, sanitize_pdf_text
+from novelspine.text_cleanup import collapse_pdf_spacing, sanitize_pdf_text
 
 
 @pytest.mark.parametrize(

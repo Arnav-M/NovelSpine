@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pytest
 
-from novelflow.book_structure import SectionKind, parse_book_sections
-from novelflow.convert import convert_pdf
+from novelspine.book_structure import SectionKind, parse_book_sections
+from novelspine.convert import convert_pdf
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures" / "pdfs"
 

@@ -9,10 +9,10 @@ export default defineConfig({
     port: 5174,
     strictPort: false,
     proxy: {
-      "/novelflow-api": {
+      "/novelspine-api": {
         target: sidecarTarget,
         changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/novelflow-api/, ""),
+        rewrite: (path) => path.replace(/^\/novelspine-api/, ""),
       },
     },
   },

@@ -1,4 +1,4 @@
-﻿"""One-off icon generator for Novelflow."""
+﻿"""One-off icon generator for NovelSpine."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw
 
-OUT = Path(__file__).resolve().parents[1] / "src" / "novelflow" / "assets"
+OUT = Path(__file__).resolve().parents[1] / "src" / "novelspine" / "assets"
 SIZE = 256
 
 

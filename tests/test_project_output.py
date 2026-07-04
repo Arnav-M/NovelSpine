@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from novelflow.project_output import (
+from novelspine.project_output import (
     AudiobookBuildSpec,
     AudiobookUnchangedError,
     audiobook_in_project,

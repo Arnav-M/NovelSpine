@@ -25,7 +25,7 @@
   </Resources>
 
   <Applications>
-    <Application Id="Novelflow" Executable="novelflow-desktop.exe" EntryPoint="Windows.FullTrustApplication">
+    <Application Id="NovelSpine" Executable="novelspine-desktop.exe" EntryPoint="Windows.FullTrustApplication">
       <uap:VisualElements
         DisplayName="{{DISPLAY_NAME}}"
         Description="Turn PDFs and ebooks into narrated audiobooks, entirely on your PC."

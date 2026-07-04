@@ -168,12 +168,12 @@ export default function PlayerTab({ onOpenDocument }: PlayerTabProps) {
               <>
                 Set the library folder on the{" "}
                 <button type="button" className="btn-link" onClick={onOpenDocument}>
-                  Create tab
+                  Convert tab
                 </button>{" "}
                 to scan for audiobooks.
               </>
             ) : (
-              "Set the library folder on the Create tab to scan for audiobooks."
+              "Set the library folder on the Convert tab to scan for audiobooks."
             )}
           </p>
         )}

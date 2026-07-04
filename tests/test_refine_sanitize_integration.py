@@ -1,6 +1,6 @@
 ﻿"""Integration tests: sanitization + refinement."""
 
-from novelflow.refine import refine_markdown
+from novelspine.refine import refine_markdown
 
 
 def test_refine_repairs_null_bytes_in_epigraph() -> None:

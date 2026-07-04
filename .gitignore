@@ -34,8 +34,9 @@ desktop.ini
 .cursor/
 .pytest_cache/
 
-sidecar-test.log
-sidecar-test.err
+build-clean.log
+build-package*.log
+build-tauri-bundle.log
 
 # Local test outputs
 *.readable.md

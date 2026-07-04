@@ -1,6 +1,6 @@
 import { useCallback, useState } from "react";
 
-const STORAGE_KEY = "novelflow.player.sidebarState";
+const STORAGE_KEY = "novelspine.player.sidebarState";
 
 export interface PlayerSidebarState {
   chaptersOpen: boolean;

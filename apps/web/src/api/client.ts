@@ -9,7 +9,7 @@ function isTauriRuntime(): boolean {
 export const API_BASE =
   isTauriRuntime() || !import.meta.env.DEV
     ? "http://127.0.0.1:8765"
-    : "/novelflow-api";
+    : "/novelspine-api";
 
 export interface Voice {
   id: string;
@@ -71,6 +71,8 @@ export interface JobStatus {
   state: "pending" | "running" | "done" | "error" | "cancelled";
   progress: number;
   message: string;
+  result?: unknown;
+  error?: string | null;
 }
 
 export interface JobEvent {
@@ -90,7 +92,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   } catch (err) {
     throw new Error(
       err instanceof TypeError
-        ? "Could not reach Novelflow API — try restarting the app."
+        ? "Could not reach NovelSpine API — try restarting the app."
         : err instanceof Error
           ? err.message
           : String(err),
@@ -268,15 +270,91 @@ export function subscribeJobEvents(
     onEnd?: () => void;
   },
 ): () => void {
+  let closed = false;
+  let reconciling = false;
   const source = new EventSource(`${API_BASE}/jobs/${encodeURIComponent(jobId)}/events`);
 
+  const finish = () => {
+    if (closed) return;
+    closed = true;
+    source.close();
+    handlers.onEnd?.();
+  };
+
+  const emitFromStatus = (status: JobStatus): boolean => {
+    if (status.state === "running" || status.state === "pending") {
+      if (status.progress > 0) {
+        handlers.onEvent?.({ type: "progress", percent: status.progress });
+      }
+      return false;
+    }
+    if (status.state === "done") {
+      if (status.result !== undefined && status.result !== null) {
+        handlers.onEvent?.({ type: "done", result: status.result });
+      } else {
+        handlers.onEvent?.({ type: "state", state: "done" });
+      }
+      handlers.onEvent?.({ type: "end" });
+      finish();
+      return true;
+    }
+    if (status.state === "error") {
+      const msg = status.error || status.message || "Job failed.";
+      handlers.onEvent?.({ type: "state", state: "error", message: msg });
+      handlers.onEvent?.({ type: "error", message: msg });
+      handlers.onEvent?.({ type: "end" });
+      finish();
+      return true;
+    }
+    if (status.state === "cancelled") {
+      handlers.onEvent?.({ type: "state", state: "cancelled" });
+      handlers.onEvent?.({ type: "end" });
+      finish();
+      return true;
+    }
+    return false;
+  };
+
+  const reconcile = async () => {
+    if (closed || reconciling) return;
+    reconciling = true;
+    const maxMs = 30 * 60 * 1000;
+    const started = Date.now();
+    let delay = 500;
+    try {
+      while (!closed && Date.now() - started < maxMs) {
+        try {
+          const status = await getJobStatus(jobId);
+          if (emitFromStatus(status)) return;
+        } catch {
+          /* retry */
+        }
+        await new Promise((resolve) => setTimeout(resolve, delay));
+        delay = Math.min(Math.round(delay * 1.5), 5000);
+      }
+      if (!closed) {
+        handlers.onEvent?.({
+          type: "state",
+          state: "error",
+          message:
+            "Lost connection to job progress. Your audiobook may still be building — check the Player tab when it finishes.",
+        });
+        handlers.onEvent?.({ type: "end" });
+        finish();
+      }
+    } finally {
+      reconciling = false;
+    }
+  };
+
   source.onmessage = (msg) => {
+    if (closed) return;
     try {
       const event = JSON.parse(msg.data) as JobEvent;
+      if (event.type === "ping") return;
       handlers.onEvent?.(event);
       if (event.type === "end") {
-        handlers.onEnd?.();
-        source.close();
+        finish();
       }
     } catch (err) {
       handlers.onError?.(err instanceof Error ? err : new Error(String(err)));
@@ -284,9 +362,13 @@ export function subscribeJobEvents(
   };
 
   source.onerror = () => {
-    handlers.onError?.(new Error("Job event stream disconnected."));
+    if (closed) return;
     source.close();
+    void reconcile();
   };
 
-  return () => source.close();
+  return () => {
+    closed = true;
+    source.close();
+  };
 }

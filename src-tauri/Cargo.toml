@@ -1,12 +1,12 @@
 [package]
-name = "novelflow-desktop"
-version = "3.0.0"
-description = "Novelflow desktop app"
-authors = ["Novelflow"]
+name = "novelspine-desktop"
+version = "1.0.0"
+description = "NovelSpine desktop app"
+authors = ["NovelSpine"]
 edition = "2021"
 
 [lib]
-name = "novelflow_desktop_lib"
+name = "novelspine_desktop_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]

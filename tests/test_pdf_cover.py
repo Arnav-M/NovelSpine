@@ -3,7 +3,7 @@
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from novelflow.pdf_extract import extract_first_page_cover_image
+from novelspine.pdf_extract import extract_first_page_cover_image
 
 
 def test_extract_first_page_cover_image_saves_png(tmp_path: Path):
@@ -23,8 +23,8 @@ def test_extract_first_page_cover_image_saves_png(tmp_path: Path):
     mock_doc.__getitem__.return_value = mock_page
 
     with (
-        patch("novelflow.pdf_extract.pymupdf.open", return_value=mock_doc),
-        patch("novelflow.pdf_extract.pymupdf.Pixmap", return_value=mock_pix),
+        patch("novelspine.pdf_extract.pymupdf.open", return_value=mock_doc),
+        patch("novelspine.pdf_extract.pymupdf.Pixmap", return_value=mock_pix),
     ):
         result = extract_first_page_cover_image(pdf, out)
 

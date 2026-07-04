@@ -1,8 +1,8 @@
-﻿## Novelflow 3.0
+## NovelSpine 1.0
 
 **PDF → readable markdown → chapter-marked audiobook** — now with a modern desktop app (Tauri + React).
 
-Novelflow extracts text with [PyMuPDF](https://pymupdf.readthedocs.io/) and post-processes it so fiction PDFs become actually readable: proper paragraphs, foldable chapter headings, scene headers, navigation links, and common glyph fixes.
+NovelSpine extracts text with [PyMuPDF](https://pymupdf.readthedocs.io/) and post-processes it so fiction PDFs become actually readable: proper paragraphs, foldable chapter headings, scene headers, navigation links, and common glyph fixes.
 
 Optionally builds a **local audiobook** (M4B/MP3) with navigable section markers — title, dedication, chapters, acknowledgements, and more.
 
@@ -10,13 +10,13 @@ No manual pipeline. No upload. No page limits.
 
 ## Install (end users)
 
-Download **`Novelflow-Setup.exe`** from [GitHub Releases](https://github.com/Arnav-M/Novelflow/releases) and run the wizard. No Python or ffmpeg required.
+Download **`NovelSpine-Setup.exe`** from [GitHub Releases](https://github.com/Arnav-M/NovelSpine/releases) and run the wizard. No Python or ffmpeg required.
 
 ## Install (developers)
 
 ```bash
-git clone https://github.com/Arnav-M/Novelflow.git
-cd Novelflow
+git clone https://github.com/Arnav-M/NovelSpine.git
+cd NovelSpine-desktop
 pip install -e ".[audiobook,dev]"
 ```
 
@@ -26,20 +26,20 @@ Requires Python 3.10+.
 
 ```bash
 # Markdown only
-novelflow "book.pdf"
+novelspine "book.pdf"
 
 # Markdown + audiobook (auto engine — Kokoro on GPU, else parallel Edge)
-novelflow "book.pdf" --audiobook
+novelspine "book.pdf" --audiobook
 
 # Include dedication, acknowledgements, etc.
-novelflow "book.pdf" --audiobook --all-sections
+novelspine "book.pdf" --audiobook --all-sections
 
 # Audiobook from existing markdown
-novelflow book.readable.md --from-markdown --audiobook
+novelspine book.readable.md --from-markdown --audiobook
 
 # List voices
-novelflow --list-voices --tts-engine edge
-novelflow --list-voices --tts-engine kokoro
+novelspine --list-voices --tts-engine edge
+novelspine --list-voices --tts-engine kokoro
 ```
 
 Output:
@@ -54,7 +54,7 @@ By default only **title + chapters** are synthesized (skips Contents, Dedication
 Use the **Audiobook settings** tab in the GUI to enable extra sections, or:
 
 ```bash
-novelflow book.pdf --audiobook --all-sections
+novelspine book.pdf --audiobook --all-sections
 ```
 
 Section markers are saved in `.manifest.json` with `start_ms` / `end_ms` for in-app skip.
@@ -73,14 +73,14 @@ The **Tauri + React + FastAPI** desktop UI lives in this repo. See **[README-des
 
 ## GUI (legacy, deprecated)
 
-The original **Tkinter** GUI (`novelflow-gui`) is deprecated in favor of the desktop app above. It remains available for compatibility:
+The original **Tkinter** GUI (`novelspine-gui`) is deprecated in favor of the desktop app above. It remains available for compatibility:
 
 ```bash
 pip install -e ".[gui]"
-novelflow-gui
+novelspine-gui
 ```
 
-Source files under `src/novelflow/gui*.py` are kept but no longer receive new features. Use the desktop app for HTML5 playback and the modern UI.
+Source files under `src/novelspine/gui*.py` are kept but no longer receive new features. Use the desktop app for HTML5 playback and the modern UI.
 
 ## Test sample PDFs
 
@@ -104,7 +104,7 @@ python scripts/download_sample_pdfs.py
 ## Pipeline
 
 ```
-PDF  →  PyMuPDF  →  novelflow refine  →  .readable.md  →  TTS  →  .audiobook.m4b
+PDF  →  PyMuPDF  →  NovelSpine refine  →  .readable.md  →  TTS  →  .audiobook.m4b
                                               ↓
                                     .manifest.json (section markers)
 ```

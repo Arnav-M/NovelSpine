@@ -1,6 +1,6 @@
 {
-  "name": "@novelflow/web",
-  "version": "3.0.0",
+  "name": "@novelspine/web",
+  "version": "1.0.0",
   "private": true,
   "type": "module",
   "scripts": {

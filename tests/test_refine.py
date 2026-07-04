@@ -1,6 +1,6 @@
-﻿"""Tests for novelflow refinement."""
+﻿"""Tests for novelspine refinement."""
 
-from novelflow.refine import (
+from novelspine.refine import (
     deflatten_pipe_prose,
     is_scene_header,
     preprocess_raw_line,

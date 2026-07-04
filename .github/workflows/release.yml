@@ -39,6 +39,6 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            release/Novelflow-Setup-*-x64.exe
-            release/Novelflow-*-x64.msi
+            release/NovelSpine-Setup-*-x64.exe
+            release/NovelSpine-*-x64.msi
           generate_release_notes: true

@@ -27,7 +27,6 @@ import {
   pathsEqual,
   pickLibraryItemForMarkdown,
   resolveMediaUrl,
-  resolveSpeedMediaUrl,
   SPEED_OPTIONS,
 } from "../lib/files";
 import {
@@ -46,6 +45,49 @@ export interface AudiobookSwitchPrompt {
 }
 
 export type LoadAudiobookMode = "auto" | "user";
+
+function normalizePathKey(path: string): string {
+  return path.replace(/\\/g, "/").toLowerCase();
+}
+
+/** Apply playback speed natively with pitch preservation (works in-app and in-browser). */
+function applyPlaybackRate(audio: HTMLAudioElement, speed: number): void {
+  const rate = Number.isFinite(speed) && speed > 0 ? speed : 1;
+  type PitchAudio = HTMLAudioElement & {
+    preservesPitch?: boolean;
+    mozPreservesPitch?: boolean;
+    webkitPreservesPitch?: boolean;
+  };
+  const el = audio as PitchAudio;
+  el.preservesPitch = true;
+  el.mozPreservesPitch = true;
+  el.webkitPreservesPitch = true;
+  audio.defaultPlaybackRate = rate;
+  audio.playbackRate = rate;
+}
+
+const CHAPTERS_RETRY_DELAYS_MS = [200, 400, 800, 1200, 2000];
+
+interface LoadItemOptions {
+  fresh?: boolean;
+}
+
+async function getChaptersWithRetry(audioPath: string) {
+  let lastErr: unknown;
+  for (let attempt = 0; attempt < CHAPTERS_RETRY_DELAYS_MS.length; attempt++) {
+    try {
+      return await getChapters(audioPath);
+    } catch (err) {
+      lastErr = err;
+      const message = err instanceof Error ? err.message : String(err);
+      if (!/not found|404/i.test(message) || attempt === CHAPTERS_RETRY_DELAYS_MS.length - 1) {
+        throw err;
+      }
+      await new Promise((resolve) => setTimeout(resolve, CHAPTERS_RETRY_DELAYS_MS[attempt]));
+    }
+  }
+  throw lastErr;
+}
 
 export interface PlayerContextValue {
   loaded: boolean;
@@ -221,6 +263,9 @@ export function PlayerProvider({
   const lastAudiobookRef = useRef(lastAudiobook);
   const markdownPathRef = useRef(markdownPath);
   const prevProjectFolderRef = useRef(projectFolder);
+  const missingLoggedRef = useRef(new Set<string>());
+  const knownMissingRef = useRef(new Set<string>());
+  const refreshLibraryRef = useRef<() => Promise<LibraryItem[]>>(async () => []);
 
   projectFolderRef.current = projectFolder;
   lastAudiobookRef.current = lastAudiobook;
@@ -257,6 +302,39 @@ export function PlayerProvider({
     }
     setPlaying(false);
   }, []);
+
+  const isKnownMissing = (path: string) => knownMissingRef.current.has(normalizePathKey(path));
+
+  const clearMissingFor = (path: string) => {
+    const key = normalizePathKey(path);
+    missingLoggedRef.current.delete(key);
+    knownMissingRef.current.delete(key);
+  };
+
+  const reportMissingAudiobook = (audioPath: string, logMessage: string) => {
+    const key = normalizePathKey(audioPath);
+    knownMissingRef.current.add(key);
+    if (!missingLoggedRef.current.has(key)) {
+      missingLoggedRef.current.add(key);
+      onLog(logMessage, "muted");
+    }
+    pausePlayback();
+    setPlayableUrl(null);
+    loadedMediaPathRef.current = "";
+    advancingRef.current = false;
+    if (pathsEqual(selectedRef.current?.audio_path ?? "", audioPath)) {
+      setSelected(null);
+      setChapters([]);
+      chaptersRef.current = [];
+      setCurrentMs(0);
+      setChapterMs(0);
+      setActiveChapter(0);
+      currentMsRef.current = 0;
+      chapterMsRef.current = 0;
+      activeChapterRef.current = 0;
+    }
+    void refreshLibraryRef.current();
+  };
 
   const findResumeEntry = useCallback(
     (resume: Record<string, unknown>, audioPath: string): { ms?: number; chapter?: number } | undefined => {
@@ -385,9 +463,8 @@ export function PlayerProvider({
       const ch = chapterList[index];
       const merged = isMergedAudiobook(chapterList);
       const audioSeekMs = merged ? (ch?.start_ms ?? 0) + offsetMs : offsetMs;
-      setSpeedStatus(Math.abs(spd - 1) >= 0.01 ? `Preparing ${spd}× playback…` : null);
       try {
-        const url = await resolveSpeedMediaUrl(path, spd);
+        const url = await resolveMediaUrl(path);
         if (!mountedRef.current || !stillOwner() || !url) return;
         const audio = audioRef.current;
         if (!audio) return;
@@ -407,6 +484,10 @@ export function PlayerProvider({
           });
         }
         if (!stillOwner()) return;
+        // Speed is applied natively (pitch preserved) rather than via a
+        // re-encoded server variant. load() resets the rate, so set it here
+        // after the media is ready.
+        applyPlaybackRate(audio, spd);
         audio.currentTime = audioSeekMs / 1000;
         const bookMs = merged ? audioSeekMs : bookPositionMs(chapterList, index, offsetMs);
         chapterMsRef.current = offsetMs;
@@ -419,9 +500,16 @@ export function PlayerProvider({
           setPlaying(true);
         }
       } catch (err) {
-        if (stillOwner()) {
-          onLog(err instanceof Error ? err.message : String(err), "danger");
+        if (!stillOwner()) return;
+        const message = err instanceof Error ? err.message : String(err);
+        if (/not found|404/i.test(message)) {
+          const owner = ownerAudioPath ?? selectedRef.current?.audio_path ?? "";
+          if (owner) {
+            reportMissingAudiobook(owner, `Audiobook file missing: ${baseName(owner)}`);
+          }
+          return;
         }
+        onLog(message, "danger");
       } finally {
         if (mountedRef.current) setSpeedStatus(null);
       }
@@ -481,8 +569,13 @@ export function PlayerProvider({
   }, []);
 
   const loadItem = useCallback(
-    async (item: LibraryItem) => {
-      const run = async () => {
+    async (item: LibraryItem, options?: LoadItemOptions) => {
+      if (isKnownMissing(item.audio_path) && !options?.fresh) return;
+      if (options?.fresh) {
+        clearMissingFor(item.audio_path);
+      }
+
+      const run = async (): Promise<void> => {
         const generation = ++loadGenerationRef.current;
         const isAlive = () => generation === loadGenerationRef.current && mountedRef.current;
 
@@ -497,12 +590,25 @@ export function PlayerProvider({
           );
         }
 
+        const rollbackOptimistic = () => {
+          if (previous) {
+            setSelected(previous);
+          } else {
+            setSelected(null);
+          }
+          setChapters([]);
+          chaptersRef.current = [];
+          setCoverUrl(null);
+          setPlayableUrl(null);
+          loadedMediaPathRef.current = "";
+        };
+
         resumeSaveSuspendedRef.current = true;
         try {
           setSelected(item);
           setCoverUrl(null);
           loadedMediaPathRef.current = "";
-          const data = await getChapters(item.audio_path);
+          const data = await getChaptersWithRetry(item.audio_path);
           if (!isAlive()) return;
           const nextChapters = Array.isArray(data.chapters) ? data.chapters : [];
           chaptersRef.current = nextChapters;
@@ -527,20 +633,26 @@ export function PlayerProvider({
           }
           if (!isAlive()) return;
           await loadChapterMedia(startIndex, offsetMs, speed, false, nextChapters, item.audio_path);
+          clearMissingFor(item.audio_path);
+          lastLoadedRef.current = item.audio_path;
+          return;
         } catch (err) {
           if (!isAlive()) return;
+          rollbackOptimistic();
           const message = err instanceof Error ? err.message : String(err);
           if (/not found|404/i.test(message)) {
-            onLog(`Audiobook file missing: ${baseName(item.audio_path)}`, "muted");
-            if (pathsEqual(selectedRef.current?.audio_path ?? "", item.audio_path)) {
-              setSelected(null);
-              setChapters([]);
-              chaptersRef.current = [];
-              setPlayableUrl(null);
+            if (options?.fresh) {
+              onLog(`Audiobook not ready yet: ${baseName(item.audio_path)}`, "muted");
+            } else {
+              reportMissingAudiobook(
+                item.audio_path,
+                `Audiobook file missing: ${baseName(item.audio_path)}`,
+              );
             }
             return;
           }
           onLog(message, "danger");
+          return;
         } finally {
           if (generation === loadGenerationRef.current) {
             resumeSaveSuspendedRef.current = false;
@@ -570,7 +682,16 @@ export function PlayerProvider({
   );
 
   const loadFromPath = useCallback(
-    async (audioPath: string, libraryItems?: LibraryItem[], mode: LoadAudiobookMode = "auto") => {
+    async (
+      audioPath: string,
+      libraryItems?: LibraryItem[],
+      mode: LoadAudiobookMode = "auto",
+      options?: LoadItemOptions,
+    ) => {
+      if (isKnownMissing(audioPath) && !options?.fresh) return;
+      if (options?.fresh) {
+        clearMissingFor(audioPath);
+      }
       if (mode === "auto" && shouldOfferSwitch(audioPath)) {
         offerAudiobookSwitch(audioPath, libraryItems ?? items);
         return;
@@ -579,7 +700,7 @@ export function PlayerProvider({
       const pool = libraryItems ?? items;
       const match = pool.find((i) => pathsEqual(i.audio_path, audioPath));
       if (match) {
-        await loadItem(match);
+        await loadItem(match, options);
         return;
       }
       const stub: LibraryItem = {
@@ -588,7 +709,7 @@ export function PlayerProvider({
         markdown_path: markdownPath || null,
         cover_path: null,
       };
-      await loadItem(stub);
+      await loadItem(stub, options);
     },
     [items, loadItem, markdownPath, offerAudiobookSwitch, pausePlayback, shouldOfferSwitch],
   );
@@ -601,7 +722,6 @@ export function PlayerProvider({
     [items, loadItem],
   );
 
-  const refreshLibraryRef = useRef(refreshLibrary);
   const loadFromPathRef = useRef(loadFromPath);
   const offerAudiobookSwitchRef = useRef(offerAudiobookSwitch);
   const shouldOfferSwitchRef = useRef(shouldOfferSwitch);
@@ -635,6 +755,8 @@ export function PlayerProvider({
     if (folderChanged) {
       refreshKeyRef.current = "";
       refreshPromiseRef.current = null;
+      missingLoggedRef.current.clear();
+      knownMissingRef.current.clear();
       setItems([]);
       setCoverMap({});
       if (selectedRef.current) {
@@ -673,33 +795,56 @@ export function PlayerProvider({
       const path = lastAudiobookRef.current;
       if (!path) return;
 
+      clearMissingFor(path);
+
       const list = await refreshLibraryRef.current();
       if (cancelled || !mountedRef.current) return;
 
-      adoptHandledRef.current = path;
-
-      if (pathsEqual(path, lastLoadedRef.current)) return;
+      if (pathsEqual(path, lastLoadedRef.current)) {
+        adoptHandledRef.current = path;
+        return;
+      }
 
       if (shouldOfferSwitchRef.current(path)) {
         pendingLibraryRef.current = list;
         offerAudiobookSwitchRef.current(path, list);
+        adoptHandledRef.current = path;
         return;
       }
 
       if (selectedRef.current && pathsEqual(selectedRef.current.audio_path, path)) {
+        adoptHandledRef.current = path;
         lastLoadedRef.current = path;
         return;
       }
 
-      lastLoadedRef.current = path;
-      await loadFromPathRef.current(path, list, "user");
+      const delays = [0, 500, 1500, 3000, 5000];
+      for (let attempt = 0; attempt < delays.length; attempt++) {
+        if (cancelled || !mountedRef.current) return;
+        if (delays[attempt]! > 0) {
+          await new Promise((resolve) => setTimeout(resolve, delays[attempt]));
+        }
+        clearMissingFor(path);
+        await loadFromPathRef.current(path, list, "user", { fresh: true });
+        if (pathsEqual(lastLoadedRef.current, path)) {
+          adoptHandledRef.current = path;
+          return;
+        }
+      }
+
+      if (!cancelled && mountedRef.current) {
+        onLog(
+          `Could not load audiobook yet: ${baseName(path)}. Open it from the Player tab.`,
+          "danger",
+        );
+      }
     }
 
     void adoptNewAudiobook();
     return () => {
       cancelled = true;
     };
-  }, [lastAudiobook]);
+  }, [lastAudiobook, onLog]);
 
   useEffect(() => {
     if (!markdownPath || !items.length) return;
@@ -723,6 +868,12 @@ export function PlayerProvider({
     if (!audio) return;
     audio.volume = volume;
   }, [volume, playableUrl]);
+
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    applyPlaybackRate(audio, speed);
+  }, [speed, playableUrl]);
 
   const persistResume = useCallback(async () => {
     const item = selectedRef.current;
@@ -803,13 +954,16 @@ export function PlayerProvider({
   const setSpeed = useCallback(
     async (v: (typeof SPEED_OPTIONS)[number]) => {
       setSpeedState(v);
+      speedRef.current = v;
       if (prefs.remember_speed !== false) {
         void onPrefsChange({ speed: v, remember_speed: true });
       }
-      const offset = chapterMs;
-      await loadChapterMedia(activeChapter, offset, v, playing);
+      // Native playbackRate applies instantly to the current media — no reload
+      // or re-encode needed.
+      const audio = audioRef.current;
+      if (audio) applyPlaybackRate(audio, v);
     },
-    [activeChapter, chapterMs, loadChapterMedia, onPrefsChange, playing, prefs.remember_speed],
+    [onPrefsChange, prefs.remember_speed],
   );
 
   const setVolume = useCallback(
@@ -997,7 +1151,9 @@ export function PlayerProvider({
         hidden
         onLoadedMetadata={() => {
           const audio = audioRef.current;
-          if (!audio || chapters.length) return;
+          if (!audio) return;
+          applyPlaybackRate(audio, speedRef.current);
+          if (chapters.length) return;
           const metaMs = Number.isFinite(audio.duration) ? audio.duration * 1000 : 0;
           if (metaMs > 0) setChapterMs(Math.min(chapterMs, metaMs));
         }}
@@ -1005,6 +1161,14 @@ export function PlayerProvider({
         onPause={() => {
           setPlaying(false);
           void persistResume();
+        }}
+        onError={() => {
+          const item = selectedRef.current;
+          if (!item?.audio_path) return;
+          reportMissingAudiobook(
+            item.audio_path,
+            "Playback stopped — this audio file is no longer available.",
+          );
         }}
         onTimeUpdate={() => {
           const audio = audioRef.current;

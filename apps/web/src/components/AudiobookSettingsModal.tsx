@@ -72,6 +72,9 @@ export default function AudiobookSettingsModal({
     return "";
   }, [markdownPath, sourcePath]);
 
+  const isPdfSource = sourcePath.toLowerCase().endsWith(".pdf");
+  const convertingMarkdown = busy && !mdPath && isPdfSource;
+
   const stats = useMemo(() => selectionStats(sections, enabled), [enabled, sections]);
 
   const estimateLine = useMemo(() => {
@@ -296,7 +299,9 @@ export default function AudiobookSettingsModal({
 
             {!mdPath ? (
               <p className="audiobook-estimate-empty">
-                Markdown not ready yet — sections will load after conversion, or pick a markdown file.
+                {convertingMarkdown
+                  ? "Creating markdown to load sections…"
+                  : "Markdown not ready yet — sections will load after conversion, or pick a markdown file."}
               </p>
             ) : !sections.length ? (
               <p className="audiobook-estimate-empty">Loading sections…</p>

@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from novelflow.book_structure import SectionKind, find_cover_image_path, parse_book_sections
+from novelspine.book_structure import SectionKind, find_cover_image_path, parse_book_sections
 
 
 SAMPLE = """\
@@ -56,7 +56,7 @@ def test_strip_markdown_for_tts():
 
 
 def test_reader_lines_include_chapter_announcement():
-    from novelflow.book_structure import reader_lines_for_section
+    from novelspine.book_structure import reader_lines_for_section
 
     manifest = parse_book_sections(SAMPLE)
     ch1 = next(s for s in manifest.sections if s.title == "Chapter One")
@@ -69,7 +69,7 @@ def test_reader_lines_include_chapter_announcement():
 
 
 def test_section_lookup_by_chapter_id():
-    from novelflow.book_structure import section_for_audio_chapter
+    from novelspine.book_structure import section_for_audio_chapter
 
     manifest = parse_book_sections(SAMPLE)
     ch1 = next(s for s in manifest.sections if s.title == "Chapter One")
@@ -79,7 +79,7 @@ def test_section_lookup_by_chapter_id():
 
 
 def test_section_for_chapter_index_matches_audiobook_order():
-    from novelflow.book_structure import (
+    from novelspine.book_structure import (
         apply_default_audiobook_filter,
         section_for_chapter_index,
     )
@@ -102,7 +102,7 @@ def test_section_for_chapter_index_matches_audiobook_order():
 
 
 def test_default_audiobook_filter():
-    from novelflow.book_structure import (
+    from novelspine.book_structure import (
         SectionKind,
         apply_default_audiobook_filter,
         default_audiobook_disabled_ids,

@@ -20,7 +20,7 @@ ROOT = Path(__file__).resolve().parents[1] / "tests" / "fixtures" / "pdfs"
 def _download(url: str, dest: Path) -> None:
     request = urllib.request.Request(
         url,
-        headers={"User-Agent": "Novelflow/0.2 (+https://github.com/Arnav-M/Novelflow)"},
+        headers={"User-Agent": "NovelSpine/0.2 (+https://github.com/Arnav-M/NovelSpine)"},
     )
     with urllib.request.urlopen(request, timeout=300) as response:
         dest.write_bytes(response.read())

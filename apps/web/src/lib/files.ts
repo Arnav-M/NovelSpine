@@ -50,7 +50,7 @@ export async function resolveSpeedMediaUrl(path: string, speed: number): Promise
   } catch (err) {
     throw new Error(
       err instanceof TypeError
-        ? "Could not reach Novelflow API — try restarting the app."
+        ? "Could not reach NovelSpine API — try restarting the app."
         : err instanceof Error
           ? err.message
           : String(err),

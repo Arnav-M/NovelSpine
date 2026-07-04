@@ -108,7 +108,7 @@ export function lineSeekMs(
 ): number {
   if (lineIndex < 0 || lineIndex >= weights.length || chapterDurationMs <= 0) return 0;
 
-  const speed = options?.playbackSpeed ?? 1;
+  // Seek positions are on the original timeline; native playbackRate handles speed.
   const scaledStarts = resolveScaledLineStarts(
     weights,
     lineStartMs,
@@ -117,8 +117,7 @@ export function lineSeekMs(
   );
 
   if (scaledStarts.length > 0) {
-    const timingMs = scaledStarts[lineIndex] ?? 0;
-    return speed > 0 ? timingMs / speed : timingMs;
+    return scaledStarts[lineIndex] ?? 0;
   }
 
   const totalWeight = weights.reduce((sum, w) => sum + Math.max(w, 1), 0);
@@ -126,8 +125,7 @@ export function lineSeekMs(
   for (let i = 0; i < lineIndex; i += 1) {
     cumulative += Math.max(weights[i], 1) / totalWeight;
   }
-  const timingMs = cumulative * chapterDurationMs;
-  return speed > 0 ? timingMs / speed : timingMs;
+  return cumulative * chapterDurationMs;
 }
 
 export function readerLineState(
@@ -140,8 +138,9 @@ export function readerLineState(
     sectionDurationMs?: number;
   },
 ): ReaderLineState {
-  const speed = options?.playbackSpeed ?? 1;
-  const timingMs = speed > 0 ? chapterMs * speed : chapterMs;
+  // Speed is applied via the media element's native playbackRate, so
+  // ``chapterMs`` (audio.currentTime) already tracks the original timeline.
+  const timingMs = chapterMs;
   const scaledStarts = resolveScaledLineStarts(
     weights,
     lineStartMs,

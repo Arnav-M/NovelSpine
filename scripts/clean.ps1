@@ -6,7 +6,7 @@ $Root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 Set-Location $Root
 
 function Stop-SidecarProcesses {
-    foreach ($name in @("novelflow-sidecar", "novelflow-sidecar-x86_64-pc-windows-msvc")) {
+    foreach ($name in @("novelspine-sidecar", "novelspine-sidecar-x86_64-pc-windows-msvc")) {
         Get-Process -Name $name -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
     }
 }
@@ -34,10 +34,15 @@ foreach ($rel in $RemoveDirs) {
     }
 }
 
-$SidecarBin = Join-Path $Root "src-tauri\binaries\novelflow-sidecar-x86_64-pc-windows-msvc.exe"
+$SidecarBin = Join-Path $Root "src-tauri\binaries\novelspine-sidecar-x86_64-pc-windows-msvc.exe"
+$SidecarInternal = Join-Path $Root "src-tauri\binaries\_internal"
 if (Test-Path $SidecarBin) {
     Write-Host "Removing src-tauri\binaries\*.exe..."
     Remove-Item -Force $SidecarBin
+}
+if (Test-Path $SidecarInternal) {
+    Write-Host "Removing src-tauri\binaries\_internal..."
+    Remove-Item -Recurse -Force $SidecarInternal
 }
 
 foreach ($file in @("sidecar-test.log", "sidecar-test.err")) {

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
 
-const STORAGE_KEY = "novelflow.player.columnWidths";
+const STORAGE_KEY = "novelspine.player.columnWidths";
 export const DEFAULT_CHAPTERS_WIDTH = 260;
 export const DEFAULT_READER_WIDTH = 260;
 /** Matches `--player-content-width` in styles.css — keeps book progress fully visible. */

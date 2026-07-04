@@ -173,6 +173,13 @@ export default function DocumentTab({
     }
   }, [announce, busy, customOutputPath, isPdf, keepRaw, onLog, setProgress, sourcePath, startConvertJobTracking]);
 
+  const openAudiobookFlow = useCallback(() => {
+    setAudiobookOpen(true);
+    if (isPdf && !markdownPath && !busy && !staging) {
+      void convert();
+    }
+  }, [busy, convert, isPdf, markdownPath, staging]);
+
   const openAudiobook = useCallback(async () => {
     if (!lastAudiobook) return;
     try {
@@ -231,7 +238,7 @@ export default function DocumentTab({
       onLogCollapsedChange={onLogCollapsedChange}
     >
       <div className="tab-panel">
-        <h2 className="section-heading">Create</h2>
+        <h2 className="section-heading">Convert</h2>
         <p className="section-subtitle">
           Add a PDF or markdown file, then create markdown or an audiobook.
         </p>
@@ -268,7 +275,7 @@ export default function DocumentTab({
               </button>
             </div>
             {!projectFolder && (
-              <p id="doc-library-hint" className="estimate muted">
+              <p id="doc-library-hint" className="estimate muted" style={{ whiteSpace: "nowrap" }}>
                 Choose a document to set the library folder automatically, or use Change.
               </p>
             )}
@@ -348,7 +355,7 @@ export default function DocumentTab({
               type="button"
               className="btn btn-accent"
               disabled={!(isPdf || isMarkdown) || busy || staging}
-              onClick={() => setAudiobookOpen(true)}
+              onClick={openAudiobookFlow}
             >
               Create audiobook
             </button>

@@ -189,7 +189,7 @@ fn ffmpeg_env_vars(resource_dir: Option<PathBuf>) -> Vec<(String, String)> {
         format!("{ffmpeg_path};{path}")
     };
     vec![
-        ("NOVELFLOW_FFMPEG_DIR".to_string(), ffmpeg_path),
+        ("NOVELSPINE_FFMPEG_DIR".to_string(), ffmpeg_path),
         ("PATH".to_string(), merged),
     ]
 }
@@ -207,8 +207,8 @@ fn stop_existing_sidecars() {
         use std::os::windows::process::CommandExt;
         const CREATE_NO_WINDOW: u32 = 0x08000000;
         for name in [
-            "novelflow-sidecar.exe",
-            "novelflow-sidecar-x86_64-pc-windows-msvc.exe",
+            "novelspine-sidecar.exe",
+            "novelspine-sidecar-x86_64-pc-windows-msvc.exe",
         ] {
             let _ = std::process::Command::new("taskkill")
                 .args(["/F", "/IM", name])
@@ -226,7 +226,7 @@ fn start_dev_python_sidecar(resource_dir: Option<PathBuf>) -> Result<(), String>
     let root = project_root();
     let src = root.join("src");
     let mut cmd = std::process::Command::new("python");
-    cmd.args(["-m", "novelflow.api", "--port", "8765"])
+    cmd.args(["-m", "novelspine.api", "--port", "8765"])
         .current_dir(&root)
         .env("PYTHONPATH", src.to_string_lossy().to_string());
     apply_ffmpeg_env(&mut cmd, resource_dir);
@@ -244,19 +244,34 @@ fn start_dev_python_sidecar(resource_dir: Option<PathBuf>) -> Result<(), String>
 }
 
 #[cfg(not(debug_assertions))]
+fn try_spawn_bundled_sidecar(app: &tauri::App) -> Result<(), String> {
+    let sidecar = app
+        .shell()
+        .sidecar("novelspine-sidecar")
+        .map_err(|err| format!("Sidecar binary not found: {err}"))?;
+    let resource_dir = app.path().resource_dir().ok();
+    let mut cmd = sidecar.args(["--port", "8765"]);
+    for (key, value) in ffmpeg_env_vars(resource_dir) {
+        cmd = cmd.env(key, value);
+    }
+    cmd.spawn()
+        .map(|_| ())
+        .map_err(|err| format!("Failed to start novelspine-sidecar: {err}"))
+}
+
+#[cfg(not(debug_assertions))]
 fn start_bundled_sidecar(app: &tauri::App) {
-    match app.shell().sidecar("novelflow-sidecar") {
-        Ok(sidecar) => {
-            let resource_dir = app.path().resource_dir().ok();
-            let mut cmd = sidecar.args(["--port", "8765"]);
-            for (key, value) in ffmpeg_env_vars(resource_dir) {
-                cmd = cmd.env(key, value);
-            }
-            if let Err(err) = cmd.spawn() {
-                eprintln!("Failed to start novelflow-sidecar: {err}");
+    const MAX_ATTEMPTS: u32 = 3;
+    for attempt in 1..=MAX_ATTEMPTS {
+        match try_spawn_bundled_sidecar(app) {
+            Ok(()) => return,
+            Err(err) => {
+                eprintln!("novelspine-sidecar start failed (attempt {attempt}/{MAX_ATTEMPTS}): {err}");
+                if attempt < MAX_ATTEMPTS {
+                    std::thread::sleep(std::time::Duration::from_millis(400));
+                }
             }
         }
-        Err(err) => eprintln!("Sidecar binary not found: {err}"),
     }
 }
 

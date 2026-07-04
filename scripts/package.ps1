@@ -1,4 +1,4 @@
-# Build Novelflow for end users (Windows installer + portable zip).
+# Build NovelSpine for end users (Windows installer + portable zip).
 # Usage: .\scripts\package.ps1
 
 $ErrorActionPreference = "Stop"
@@ -12,7 +12,7 @@ if (Test-Path $CargoBin) {
 }
 $env:CARGO_TARGET_DIR = Join-Path $Root "src-tauri\target"
 
-Write-Host "==> Novelflow packaging (Windows)" -ForegroundColor Cyan
+Write-Host "==> NovelSpine packaging (Windows)" -ForegroundColor Cyan
 
 # Read version from tauri.conf.json
 $TauriConf = Get-Content (Join-Path $Root "src-tauri\tauri.conf.json") -Raw | ConvertFrom-Json
@@ -23,7 +23,7 @@ Write-Host "Version: $Version"
 $IconIco = Join-Path $Root "src-tauri\icons\icon.ico"
 if (-not (Test-Path $IconIco)) {
     Write-Host "==> Generating app icons..."
-    npx tauri icon "src/novelflow/assets/icon.png" -o "src-tauri/icons"
+    npx tauri icon "src/novelspine/assets/icon.png" -o "src-tauri/icons"
 }
 
 Write-Host "==> Fetching bundled ffmpeg..."
@@ -49,16 +49,16 @@ if (-not $SetupSrc) {
     throw "NSIS installer not found under $NsisDir"
 }
 
-$SetupDest = Join-Path $ReleaseDir "Novelflow-Setup-$Version-x64.exe"
+$SetupDest = Join-Path $ReleaseDir "NovelSpine-Setup-$Version-x64.exe"
 Copy-Item -Force $SetupSrc.FullName $SetupDest
 Write-Host "Installer: $SetupDest" -ForegroundColor Green
 
 if ($MsiSrc) {
-    $MsiDest = Join-Path $ReleaseDir "Novelflow-$Version-x64.msi"
+    $MsiDest = Join-Path $ReleaseDir "NovelSpine-$Version-x64.msi"
     Copy-Item -Force $MsiSrc.FullName $MsiDest
     Write-Host "MSI:       $MsiDest" -ForegroundColor Green
 }
 
 Write-Host ""
-Write-Host "Done. Share Novelflow-Setup-$Version-x64.exe with users (double-click to install)." -ForegroundColor Cyan
+Write-Host "Done. Share NovelSpine-Setup-$Version-x64.exe with users (double-click to install)." -ForegroundColor Cyan
 Write-Host "ffmpeg is bundled - users do not need a separate install." -ForegroundColor Green

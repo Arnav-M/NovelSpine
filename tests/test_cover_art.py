@@ -3,7 +3,7 @@
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from novelflow.cover_art import find_cover_for_audiobook, find_cover_in_markdown, load_cover_photo
+from novelspine.cover_art import find_cover_for_audiobook, find_cover_in_markdown, load_cover_photo
 
 
 def test_find_cover_in_markdown_jpg(tmp_path: Path):
@@ -61,7 +61,7 @@ def test_load_cover_photo_jpg_via_pymupdf(tmp_path: Path):
     root = tk.Tk()
     root.withdraw()
     try:
-        with patch("novelflow.cover_art.pymupdf.open", return_value=mock_doc):
+        with patch("novelspine.cover_art.pymupdf.open", return_value=mock_doc):
             photo = load_cover_photo(cover, max_size=48, master=root)
         assert photo is not None
     finally:

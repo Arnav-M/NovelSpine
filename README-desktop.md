@@ -1,4 +1,4 @@
-# Novelflow Desktop
+# NovelSpine Desktop
 
 Hybrid desktop app: **Tauri 2** shell + **React** UI + **FastAPI** Python sidecar.
 
@@ -6,16 +6,16 @@ Convert PDF novels to readable markdown and chapter-marked audiobooks — same p
 
 ## For end users (download & run)
 
-1. Download **`Novelflow-Setup-x.x.x-x64.exe`** from [GitHub Releases](https://github.com/Arnav-M/Novelflow/releases) (or from the `release/` folder after building locally).
+1. Download **`NovelSpine-Setup-x.x.x-x64.exe`** from [GitHub Releases](https://github.com/Arnav-M/NovelSpine/releases) (or from the `release/` folder after building locally).
 2. Run the installer — no Python or Node required.
-3. Launch **Novelflow** from the Start menu.
+3. Launch **NovelSpine** from the Start menu.
 
 Everything (PDF conversion, TTS, ffmpeg encoding, playback) is bundled in the installer.
 
 ## Architecture
 
 ```
-React UI (apps/web)  →  HTTP/SSE  →  FastAPI sidecar (src/novelflow/api)  →  novelflow core
+React UI (apps/web)  →  HTTP/SSE  →  FastAPI sidecar (src/novelspine/api)  →  novelspine core
         ↑
    Tauri 2 shell (src-tauri) spawns sidecar on port 8765
 ```
@@ -23,9 +23,9 @@ React UI (apps/web)  →  HTTP/SSE  →  FastAPI sidecar (src/novelflow/api)  �
 | Layer | Location | Role |
 |-------|----------|------|
 | UI | `apps/web/` | Document, Audiobook, and Player tabs |
-| API | `src/novelflow/api/` | Jobs, prefs, library scan, voice list |
+| API | `src/novelspine/api/` | Jobs, prefs, library scan, voice list |
 | Sidecar binary | `src-tauri/binaries/` | PyInstaller bundle for release builds |
-| Legacy GUI | `src/novelflow/gui*.py` | **Deprecated** Tkinter app (kept for reference) |
+| Legacy GUI | `src/novelspine/gui*.py` | **Deprecated** Tkinter app (kept for reference) |
 
 ## Prerequisites
 
@@ -39,7 +39,7 @@ React UI (apps/web)  →  HTTP/SSE  →  FastAPI sidecar (src/novelflow/api)  �
 
 ## Install
 
-From the project root (`Novelflow-desktop`):
+From the project root (`novelspine-desktop`):
 
 ```bash
 pip install -e ".[audiobook,api,dev]"
@@ -67,7 +67,7 @@ npm run start
 This is equivalent to two terminals:
 
 ```bash
-npm run sidecar    # python -m novelflow.api --port 8765
+npm run sidecar    # python -m novelspine.api --port 8765
 npm run dev        # Vite on :5174 (falls back if busy)
 ```
 
@@ -87,8 +87,8 @@ Drag-and-drop works in the browser. Native file dialogs require the Tauri shell 
    Or manually:
 
    ```bash
-   python -m PyInstaller novelflow-sidecar.spec
-   copy dist\novelflow-sidecar\novelflow-sidecar.exe src-tauri\binaries\novelflow-sidecar-x86_64-pc-windows-msvc.exe
+   python -m PyInstaller novelspine-sidecar.spec
+   copy dist\novelspine-sidecar\novelspine-sidecar.exe src-tauri\binaries\novelspine-sidecar-x86_64-pc-windows-msvc.exe
    ```
 
 3. Run Tauri:
@@ -104,7 +104,7 @@ Drag-and-drop works in the browser. Native file dialogs require the Tauri shell 
 PyInstaller is installed as a Python module but its Scripts folder may not be on PATH. Always use:
 
 ```bash
-python -m PyInstaller novelflow-sidecar.spec
+python -m PyInstaller novelspine-sidecar.spec
 ```
 
 Or run `npm run build:sidecar:win` which handles the copy step.
@@ -118,7 +118,7 @@ Rust is not installed. Either:
 
 ### Port 5173 / 5174 already in use
 
-Another dev server (often FlashMon) may be on 5173. Novelflow defaults to **5174**. If both are busy, Vite picks the next free port — check the terminal for the actual URL.
+Another dev server (often FlashMon) may be on 5173. NovelSpine defaults to **5174**. If both are busy, Vite picks the next free port — check the terminal for the actual URL.
 
 To free a port on Windows:
 
@@ -131,12 +131,12 @@ taskkill /PID <pid> /F
 
 The React app expects the sidecar on **http://127.0.0.1:8765**. Start it with `npm run sidecar` or `npm run start` before opening the UI.
 
-### Scripts not on PATH (`novelflow-api.exe` warning)
+### Scripts not on PATH (`novelspine-api.exe` warning)
 
 Use module form:
 
 ```bash
-python -m novelflow.api --port 8765
+python -m novelspine.api --port 8765
 ```
 
 ## Tests
@@ -157,10 +157,10 @@ Output lands in **`release/`**:
 
 | File | Who it's for |
 |------|----------------|
-| `Novelflow-Setup-3.0.0-x64.exe` | **Most users** - double-click to install |
-| `Novelflow-3.0.0-x64.msi` | IT / silent deploy |
+| `NovelSpine-Setup-1.0.0-x64.exe` | **Most users** - double-click to install |
+| `NovelSpine-1.0.0-x64.msi` | IT / silent deploy |
 
-To publish on GitHub: tag a release (`git tag v3.0.0 && git push origin v3.0.0`) - the workflow in `.github/workflows/release.yml` builds and attaches these files automatically.
+To publish on GitHub: tag a release (`git tag v1.0.0 && git push origin v1.0.0`) - the workflow in `.github/workflows/release.yml` builds and attaches these files automatically.
 
 Manual steps (same as `package:win`):
 
@@ -184,7 +184,7 @@ Manual steps (same as `package:win`):
 
 ## Accessibility
 
-Novelflow Desktop is built for **Windows screen readers** (Narrator, NVDA, JAWS) via WebView2 UI Automation. The React UI uses ARIA landmarks, labeled controls, live regions for job progress, keyboard navigation, visible focus rings, and high-contrast (`forced-colors`) styling.
+NovelSpine Desktop is built for **Windows screen readers** (Narrator, NVDA, JAWS) via WebView2 UI Automation. The React UI uses ARIA landmarks, labeled controls, live regions for job progress, keyboard navigation, visible focus rings, and high-contrast (`forced-colors`) styling.
 
 ### Navigation
 
@@ -225,7 +225,7 @@ Turn **Scan mode off** in forms; use Scan mode for reading static content.
 
 ## Player audio
 
-The React **Player** tab uses the HTML5 `<audio>` element (via `convertFileSrc` in Tauri). The legacy Tkinter player used pygame; that code remains under `src/novelflow/gui_player_tab.py` but is not used by this app.
+The React **Player** tab uses the HTML5 `<audio>` element (via `convertFileSrc` in Tauri). The legacy Tkinter player used pygame; that code remains under `src/novelspine/gui_player_tab.py` but is not used by this app.
 
 M4B/M4A playback depends on the OS webview codec support. MP3 chapter folders work everywhere.
 
@@ -250,7 +250,7 @@ The original GUI is still installable:
 
 ```bash
 pip install -e ".[gui]"
-novelflow-gui
+novelspine-gui
 ```
 
 It is **deprecated** in favor of this desktop app. Source files (`gui.py`, `gui_*_tab.py`) are retained for compatibility but receive no new features.

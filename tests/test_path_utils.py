@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from novelflow.path_utils import safe_rmtree, safe_unlink
+from novelspine.path_utils import safe_rmtree, safe_unlink
 
 
 def test_safe_unlink_removes_file(tmp_path: Path) -> None:

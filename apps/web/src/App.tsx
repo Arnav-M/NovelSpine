@@ -25,7 +25,7 @@ import PlayerTab from "./tabs/PlayerTab";
 type TabId = "document" | "player";
 
 const TABS: { id: TabId; label: string; icon: string; panelId: string }[] = [
-  { id: "document", label: "Create", icon: "📄", panelId: "panel-document" },
+  { id: "document", label: "Convert", icon: "📄", panelId: "panel-document" },
   { id: "player", label: "Player", icon: "▶", panelId: "panel-player" },
 ];
 
@@ -68,7 +68,7 @@ function AppShell() {
   const [lastAudiobook, setLastAudiobook] = useState("");
   const [progress, setProgress] = useState<ProgressState>(IDLE_PROGRESS);
   const [logEntries, setLogEntries] = useState<LogEntry[]>([
-    { id: "boot", text: "Novelflow desktop UI loaded.", tone: "muted" },
+    { id: "boot", text: "NovelSpine desktop UI loaded.", tone: "muted" },
   ]);
   const [activeJobId, setActiveJobId] = useState<string | null>(null);
   const [activeJobKind, setActiveJobKind] = useState<"convert" | "audiobook" | null>(null);
@@ -179,13 +179,13 @@ function AppShell() {
         } catch {
           /* prefs optional on first connect */
         }
-        appendLog("Connected to Novelflow API.", "muted");
+        appendLog("Connected to NovelSpine API.", "muted");
         return;
       }
 
       setApiOk(false);
       appendLog(
-        "API unavailable. The bundled backend did not start — try restarting Novelflow.",
+        "API unavailable. The bundled backend did not start — try restarting NovelSpine.",
         "danger",
       );
       pushToast("API offline — restart the app.", "danger");
@@ -272,7 +272,7 @@ function AppShell() {
             jobStartRef.current = null;
             return;
           }
-          if (typeof payload.markdown_path === "string") {
+          if (typeof payload.markdown_path === "string" && payload.markdown_path) {
             setMarkdownPath(payload.markdown_path);
             appendLog(`Markdown ready: ${payload.markdown_path}`);
             pushToast("Markdown conversion complete.", "success");
@@ -380,9 +380,9 @@ function AppShell() {
     >
       <div className="app-shell">
         <SkipLink />
-        <header className="app-header" aria-label="Novelflow">
+        <header className="app-header" aria-label="NovelSpine">
           <div className="app-brand">
-            <h1>Novelflow</h1>
+            <h1>NovelSpine</h1>
             <p>PDF → markdown → audiobook</p>
           </div>
           <div className="header-actions">

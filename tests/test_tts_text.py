@@ -1,6 +1,6 @@
 """Tests for TTS chunk splitting."""
 
-from novelflow.tts_text import split_for_tts
+from novelspine.tts_text import split_for_tts
 
 
 def test_short_text_single_chunk():
